@@ -13,58 +13,111 @@ export default function QRScanner({ onScan, onClose }) {
         setError('');
         console.log('🎬 Starting camera...');
 
-        // Check camera permissions
+        // Check camera support
         if (!navigator.mediaDevices?.getUserMedia) {
           setError('📱 Camera API not supported on this device');
+          console.error('getUserMedia not available');
           return;
         }
 
-        // Request camera access with iOS-friendly settings
+        // Wait for video ref to be ready
+        if (!videoRef.current) {
+          console.error('Video ref not ready');
+          setError('❌ Video element not ready');
+          return;
+        }
+
+        // Request camera with fallback constraints
+        let stream = null;
         try {
-          const stream = await navigator.mediaDevices.getUserMedia({
+          console.log('Requesting camera with preferred constraints...');
+          stream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: 'environment' },
-              width: { min: 320, ideal: 1280 },
-              height: { min: 240, ideal: 720 }
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
             },
             audio: false
           });
-
-          if (!videoRef.current) {
-            console.warn('Video ref not available');
-            return;
-          }
-
-          streamRef.current = stream;
-          videoRef.current.srcObject = stream;
-
-          // Ensure video plays on iOS
-          videoRef.current.setAttribute('playsinline', 'true');
-          videoRef.current.setAttribute('webkit-playsinline', 'true');
-          videoRef.current.play().catch(err => {
-            console.error('Play error:', err);
-            setError('❌ Failed to play video');
-          });
-
-          setScanning(true);
-          console.log('✅ Camera started successfully');
-        } catch (permError) {
-          console.error('Permission error:', permError.name, permError.message);
-          if (permError.name === 'NotAllowedError') {
-            setError('📱 Camera permission denied. Please enable in Settings > Safari > Camera');
-          } else if (permError.name === 'NotFoundError') {
-            setError('📱 No camera found on this device');
-          } else {
-            setError(`📱 Camera error: ${permError.message}`);
+        } catch (err1) {
+          console.warn('Preferred constraints failed, trying fallback...', err1.name);
+          try {
+            // Fallback with minimal constraints
+            stream = await navigator.mediaDevices.getUserMedia({
+              video: { facingMode: 'environment' },
+              audio: false
+            });
+          } catch (err2) {
+            console.error('Both constraint attempts failed');
+            throw err2;
           }
         }
+
+        if (!stream) {
+          setError('❌ Failed to get camera stream');
+          return;
+        }
+
+        console.log('📹 Stream obtained:', stream.getTracks().length, 'tracks');
+
+        // Assign stream to video element
+        streamRef.current = stream;
+        videoRef.current.srcObject = stream;
+
+        // Ensure iOS compatibility
+        videoRef.current.setAttribute('playsinline', 'true');
+        videoRef.current.setAttribute('webkit-playsinline', 'true');
+        videoRef.current.setAttribute('autoplay', 'true');
+        videoRef.current.setAttribute('muted', 'true');
+
+        // Wait for stream to be ready
+        await new Promise((resolve) => {
+          const checkReady = () => {
+            if (videoRef.current?.readyState === 4) {
+              console.log('✅ Video ready');
+              resolve();
+            } else {
+              setTimeout(checkReady, 100);
+            }
+          };
+          checkReady();
+        });
+
+        // Try to play
+        try {
+          const playPromise = videoRef.current.play();
+          if (playPromise !== undefined) {
+            await playPromise;
+            console.log('✅ Video playing');
+          }
+        } catch (playErr) {
+          console.error('Play error:', playErr);
+          if (playErr.name !== 'NotAllowedError') {
+            throw playErr;
+          }
+        }
+
+        setScanning(true);
+        console.log('✅ Camera initialization complete');
       } catch (err) {
-        console.error('Camera setup error:', err);
-        setError(`❌ Error: ${err.message || 'Unable to access camera'}`);
+        console.error('Complete error:', err.name, err.message, err);
+        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+          setError('📱 Camera permission denied. Check Settings > Safari > Camera');
+        } else if (err.name === 'NotFoundError') {
+          setError('📱 No camera found on this device');
+        } else if (err.name === 'NotReadableError') {
+          setError('📱 Camera is in use by another app');
+        } else if (err.name === 'AbortError') {
+          setError('📱 Camera initialization aborted');
+        } else {
+          setError(`📱 Camera error: ${err.name || err.message}`);
+        }
+        setScanning(false);
       }
     };
 
-    const timer = setTimeout(startCamera, 200);
+    // Delay to ensure DOM is fully mounted
+    const timer = setTimeout(startCamera, 300);
 
     return () => {
       clearTimeout(timer);
