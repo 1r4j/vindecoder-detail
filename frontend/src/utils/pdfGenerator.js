@@ -8,18 +8,15 @@ export async function generateInvoicePDF(invoice, businessConfig) {
     if (!invoice) {
       throw new Error('Invoice data is missing');
     }
-    if (!businessConfig) {
-      console.warn('Business config missing, using defaults');
-      businessConfig = {
-        businessName: 'Sparkle Auto Detailing',
-        businessAddress: '123 Main Street, Your City, State 12345',
-        businessPhone: '(555) 987-6543',
-        businessEmail: 'info@sparkledetail.com',
-        taxRate: 0.08,
-        paymentTermsDays: 14,
-        currencySymbol: '$'
-      };
-    }
+    // Ensure businessConfig has all required properties
+    const config = businessConfig || {};
+    const businessName = config.businessName || 'Sparkle Auto Detailing';
+    const businessAddress = config.businessAddress || '123 Main Street, Your City, State 12345';
+    const businessPhone = config.businessPhone || '(555) 987-6543';
+    const businessEmail = config.businessEmail || 'info@sparkledetail.com';
+    const taxRate = config.taxRate || 0.08;
+    const paymentTermsDays = config.paymentTermsDays || 14;
+    const currencySymbol = config.currencySymbol || '$';
 
     const doc = new jsPDF({
       orientation: 'portrait',
@@ -35,14 +32,14 @@ export async function generateInvoicePDF(invoice, businessConfig) {
 
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text(businessConfig.businessName || 'Sparkle Auto Detailing', margin, yPosition);
+    doc.text(businessName, margin, yPosition);
     yPosition += 8;
 
     doc.setFontSize(10);
     doc.setFont(undefined, 'normal');
-    doc.text(businessConfig.businessAddress || '123 Main Street', margin, yPosition);
+    doc.text(businessAddress, margin, yPosition);
     yPosition += 5;
-    doc.text(`${businessConfig.businessPhone || '(555) 987-6543'} | ${businessConfig.businessEmail || 'info@sparkledetail.com'}`, margin, yPosition);
+    doc.text(`${businessPhone} | ${businessEmail}`, margin, yPosition);
     yPosition += 12;
 
     doc.setLineWidth(0.5);
@@ -155,8 +152,8 @@ export async function generateInvoicePDF(invoice, businessConfig) {
 
       doc.text(item.serviceName, leftColumn + 2, yPosition, { maxWidth: colWidths.service - 4 });
       doc.text(item.quantity.toString(), leftColumn + colWidths.service + 2, yPosition);
-      doc.text(formatCurrency(item.rate, businessConfig.currencySymbol), leftColumn + colWidths.service + colWidths.qty + 5, yPosition);
-      doc.text(formatCurrency(item.total, businessConfig.currencySymbol), leftColumn + colWidths.service + colWidths.qty + colWidths.rate + 2, yPosition);
+      doc.text(formatCurrency(item.rate, currencySymbol), leftColumn + colWidths.service + colWidths.qty + 5, yPosition);
+      doc.text(formatCurrency(item.total, currencySymbol), leftColumn + colWidths.service + colWidths.qty + colWidths.rate + 2, yPosition);
 
       yPosition += 5;
     });
@@ -170,17 +167,17 @@ export async function generateInvoicePDF(invoice, businessConfig) {
 
     doc.setFont(undefined, 'normal');
     doc.text('Subtotal:', rightColX, yPosition);
-    doc.text(formatCurrency(invoice.subtotal, businessConfig.currencySymbol), rightColX + 35, yPosition);
+    doc.text(formatCurrency(invoice.subtotal, currencySymbol), rightColX + 35, yPosition);
 
     yPosition += 6;
     doc.text('Tax (' + (invoice.taxRate * 100).toFixed(0) + '%):', rightColX, yPosition);
-    doc.text(formatCurrency(invoice.taxAmount, businessConfig.currencySymbol), rightColX + 35, yPosition);
+    doc.text(formatCurrency(invoice.taxAmount, currencySymbol), rightColX + 35, yPosition);
 
     if (invoice.discountValue > 0) {
       yPosition += 6;
       const discountLabel = invoice.discountType === 'percentage' ? 'Discount (' + invoice.discountValue + '%)' : 'Discount';
       doc.text(discountLabel + ':', rightColX, yPosition);
-      doc.text('-' + formatCurrency(invoice.discountValue, businessConfig.currencySymbol), rightColX + 35, yPosition);
+      doc.text('-' + formatCurrency(invoice.discountValue, currencySymbol), rightColX + 35, yPosition);
     }
 
     yPosition += 8;
@@ -189,7 +186,7 @@ export async function generateInvoicePDF(invoice, businessConfig) {
     doc.setTextColor(255, 255, 255);
     doc.rect(rightColX - 5, yPosition - 4, 60, 6, 'F');
     doc.text('TOTAL DUE:', rightColX, yPosition);
-    doc.text(formatCurrency(invoice.totalAmount, businessConfig.currencySymbol), rightColX + 35, yPosition);
+    doc.text(formatCurrency(invoice.totalAmount, currencySymbol), rightColX + 35, yPosition);
     doc.setTextColor(0, 0, 0);
 
     yPosition += 12;
@@ -198,7 +195,7 @@ export async function generateInvoicePDF(invoice, businessConfig) {
 
     const statusText = `Payment Status: ${invoice.paymentStatus.toUpperCase()}`;
     const dueDate = new Date(invoice.invoiceDate);
-    dueDate.setDate(dueDate.getDate() + (businessConfig.paymentTermsDays || 14));
+    dueDate.setDate(dueDate.getDate() + paymentTermsDays);
     const dueDateText = `Due Date: ${formatDate(dueDate.toISOString().split('T')[0])}`;
 
     doc.text(statusText, leftColumn, yPosition);
