@@ -1,9 +1,17 @@
 import Database from 'better-sqlite3';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, '../data/app.db');
+const dataDir = path.join(__dirname, '../data');
+const dbPath = path.join(dataDir, 'app.db');
+
+// Create data directory if it doesn't exist
+if (!fs.existsSync(dataDir)) {
+  fs.mkdirSync(dataDir, { recursive: true });
+  console.log('Created data directory:', dataDir);
+}
 
 const db = new Database(dbPath);
 
