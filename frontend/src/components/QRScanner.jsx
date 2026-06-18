@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 export default function QRScanner({ onScan, onClose }) {
   const [error, setError] = useState('');
   const [scanning, setScanning] = useState(false);
+  const [status, setStatus] = useState('Initializing...');
   const [manualVIN, setManualVIN] = useState('');
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -11,7 +12,8 @@ export default function QRScanner({ onScan, onClose }) {
     const startCamera = async () => {
       try {
         setError('');
-        console.log('🎬 Starting camera...');
+        setStatus('Initializing camera...');
+        console.log('🎬 Step 1: Starting camera...');
 
         // Check camera support
         if (!navigator.mediaDevices?.getUserMedia) {
@@ -27,10 +29,14 @@ export default function QRScanner({ onScan, onClose }) {
           return;
         }
 
+        setStatus('Requesting camera access...');
+        console.log('🎬 Step 2: Requesting camera...');
+
         // Request camera with fallback constraints
         let stream = null;
         try {
           console.log('Requesting camera with preferred constraints...');
+          setStatus('Requesting camera with preferred settings...');
           stream = await navigator.mediaDevices.getUserMedia({
             video: {
               facingMode: { ideal: 'environment' },
@@ -41,6 +47,7 @@ export default function QRScanner({ onScan, onClose }) {
           });
         } catch (err1) {
           console.warn('Preferred constraints failed, trying fallback...', err1.name);
+          setStatus('Trying fallback camera settings...');
           try {
             // Fallback with minimal constraints
             stream = await navigator.mediaDevices.getUserMedia({
@@ -55,10 +62,12 @@ export default function QRScanner({ onScan, onClose }) {
 
         if (!stream) {
           setError('❌ Failed to get camera stream');
+          setStatus('');
           return;
         }
 
         console.log('📹 Stream obtained:', stream.getTracks().length, 'tracks');
+        setStatus('Stream obtained, setting up video...');
 
         // Assign stream to video element
         streamRef.current = stream;
@@ -70,10 +79,19 @@ export default function QRScanner({ onScan, onClose }) {
         videoRef.current.setAttribute('autoplay', 'true');
         videoRef.current.setAttribute('muted', 'true');
 
-        // Wait for stream to be ready
-        await new Promise((resolve) => {
+        setStatus('Waiting for video to load...');
+        console.log('🎬 Step 3: Waiting for video to load...');
+
+        // Wait for stream to be ready with timeout
+        await new Promise((resolve, reject) => {
+          const timeout = setTimeout(() => {
+            reject(new Error('Video loading timeout'));
+          }, 5000);
+
           const checkReady = () => {
+            console.log('Video readyState:', videoRef.current?.readyState);
             if (videoRef.current?.readyState === 4) {
+              clearTimeout(timeout);
               console.log('✅ Video ready');
               resolve();
             } else {
@@ -82,6 +100,9 @@ export default function QRScanner({ onScan, onClose }) {
           };
           checkReady();
         });
+
+        setStatus('Starting video playback...');
+        console.log('🎬 Step 4: Starting playback...');
 
         // Try to play
         try {
@@ -98,6 +119,7 @@ export default function QRScanner({ onScan, onClose }) {
         }
 
         setScanning(true);
+        setStatus('');
         console.log('✅ Camera initialization complete');
       } catch (err) {
         console.error('Complete error:', err.name, err.message, err);
@@ -109,10 +131,13 @@ export default function QRScanner({ onScan, onClose }) {
           setError('📱 Camera is in use by another app');
         } else if (err.name === 'AbortError') {
           setError('📱 Camera initialization aborted');
+        } else if (err.message?.includes('timeout')) {
+          setError('📱 Camera took too long to initialize');
         } else {
           setError(`📱 Camera error: ${err.name || err.message}`);
         }
         setScanning(false);
+        setStatus('');
       }
     };
 
@@ -161,50 +186,62 @@ export default function QRScanner({ onScan, onClose }) {
           </div>
         )}
 
-        {scanning ? (
-          <>
-            <video
-              ref={videoRef}
-              style={{
-                width: '100%',
-                maxHeight: '400px',
-                borderRadius: '8px',
-                marginBottom: '16px',
-                background: '#000',
-                display: 'block',
-                objectFit: 'cover'
-              }}
-              autoPlay
-              playsInline
-              muted
-            />
-            <p style={{
-              textAlign: 'center',
-              color: 'var(--text-light)',
-              fontSize: '12px',
-              marginBottom: '12px',
-              fontStyle: 'italic'
-            }}>
-              📸 Point camera at VIN barcode
-              <br />
-              ℹ️ Manual input below if camera doesn't work
-            </p>
-          </>
-        ) : (
-          <div style={{
-            padding: '30px 20px',
-            textAlign: 'center',
-            background: 'white',
+        {/* Video element - always rendered */}
+        <video
+          ref={videoRef}
+          style={{
+            width: '100%',
+            height: 'auto',
+            minHeight: '300px',
+            maxHeight: '400px',
             borderRadius: '8px',
-            marginBottom: '16px'
+            marginBottom: '16px',
+            background: '#000000',
+            display: 'block',
+            objectFit: 'cover'
+          }}
+          autoPlay
+          playsInline
+          muted
+        />
+
+        {/* Status message */}
+        {status && (
+          <p style={{
+            textAlign: 'center',
+            color: 'var(--primary)',
+            fontSize: '13px',
+            fontWeight: '500',
+            marginBottom: '12px',
+            animation: 'pulse 1s infinite'
           }}>
-            <p style={{ color: 'var(--text-light)', marginBottom: '8px', fontSize: '14px' }}>
-              {error ? '❌ Camera unavailable' : '⏳ Starting camera...'}
-            </p>
-            <p style={{ color: 'var(--text-lighter)', fontSize: '12px' }}>
-              Please enable camera access on this device
-            </p>
-          </div>
+            {status}
+          </p>
+        )}
+
+        {/* Camera instructions */}
+        {scanning && (
+          <p style={{
+            textAlign: 'center',
+            color: 'var(--success)',
+            fontSize: '12px',
+            marginBottom: '12px',
+            fontStyle: 'italic',
+            fontWeight: '500'
+          }}>
+            ✅ Camera ready! Point at VIN barcode
+          </p>
+        )}
+
+        {error && (
+          <p style={{
+            textAlign: 'center',
+            color: 'var(--danger)',
+            fontSize: '12px',
+            marginBottom: '12px'
+          }}>
+            {error}
+          </p>
         )}
 
         {/* Manual VIN Input */}
