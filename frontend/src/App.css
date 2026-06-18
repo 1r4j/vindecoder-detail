@@ -77,14 +77,15 @@
 .page-container {
   max-width: 1200px;
   margin: 0 auto;
-  padding: 32px 20px;
+  padding: clamp(16px, 5vw, 32px);
   width: 100%;
+  box-sizing: border-box;
 }
 
 .page-title {
-  font-size: 36px;
+  font-size: clamp(24px, 5vw, 36px);
   font-weight: 700;
-  margin-bottom: 28px;
+  margin-bottom: clamp(16px, 4vw, 28px);
   color: var(--text);
   letter-spacing: -0.5px;
   line-height: 1.2;
@@ -93,10 +94,10 @@
 .content-card {
   background: white;
   border-radius: 12px;
-  padding: 28px;
+  padding: clamp(16px, 5vw, 28px);
   box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
   border: 1px solid #E2E8F0;
-  margin-bottom: 24px;
+  margin-bottom: clamp(12px, 3vw, 24px);
   transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -107,14 +108,16 @@
 
 .scanner-input {
   display: flex;
-  gap: 12px;
-  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: clamp(8px, 2vw, 12px);
+  margin-bottom: clamp(12px, 3vw, 24px);
 }
 
 .scanner-input input {
   flex: 1;
-  padding: 12px 16px;
-  font-size: 16px;
+  min-width: 200px;
+  padding: clamp(10px, 2vw, 12px) clamp(12px, 2vw, 16px);
+  font-size: clamp(14px, 2vw, 16px);
   border: 2px solid var(--border);
 }
 
@@ -123,7 +126,9 @@
 }
 
 .scanner-input button {
-  padding: 12px 24px;
+  padding: clamp(10px, 2vw, 12px) clamp(16px, 3vw, 24px);
+  font-size: clamp(13px, 2vw, 14px);
+  white-space: nowrap;
 }
 
 .vehicle-data {
@@ -188,16 +193,17 @@
 .item-row {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 1fr auto;
-  gap: 12px;
+  gap: clamp(8px, 2vw, 12px);
   align-items: end;
-  margin-bottom: 12px;
-  padding: 12px;
+  margin-bottom: clamp(8px, 2vw, 12px);
+  padding: clamp(8px, 2vw, 12px);
   background: var(--light);
   border-radius: 6px;
 }
 
 .item-row input {
-  padding: 8px;
+  padding: clamp(6px, 1.5vw, 8px);
+  font-size: clamp(12px, 2vw, 14px);
 }
 
 .invoice-summary {
@@ -324,20 +330,36 @@
   margin-top: 8px;
 }
 
+/* Tablet devices (768px and below) */
 @media (max-width: 768px) {
   .nav-container {
-    flex-direction: column;
-    gap: 12px;
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: clamp(8px, 2vw, 12px);
     height: auto;
-    padding: 12px 20px;
+    padding: clamp(10px, 2vw, 12px) clamp(12px, 2vw, 20px);
   }
 
   .nav-title {
-    width: 100%;
+    font-size: clamp(18px, 4vw, 22px);
+    flex: 1;
+  }
+
+  .nav-buttons {
+    flex-wrap: wrap;
+  }
+
+  .nav-button {
+    padding: clamp(8px, 1.5vw, 10px) clamp(12px, 2vw, 18px);
+    font-size: clamp(12px, 1.8vw, 14px);
+  }
+
+  .vehicle-data {
+    grid-template-columns: 1fr;
   }
 
   .item-row {
-    grid-template-columns: 1fr;
+    grid-template-columns: 1fr 1fr;
   }
 
   .invoice-meta {
@@ -345,11 +367,110 @@
   }
 
   .preview-table {
-    font-size: 12px;
+    font-size: clamp(11px, 2vw, 12px);
   }
 
   .preview-table th,
   .preview-table td {
-    padding: 6px;
+    padding: clamp(4px, 1vw, 6px);
+  }
+
+  .action-buttons {
+    flex-direction: column;
+  }
+
+  .action-buttons button {
+    width: 100%;
+  }
+}
+
+/* Mobile devices (480px and below) */
+@media (max-width: 480px) {
+  .nav-container {
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px 12px;
+  }
+
+  .nav-title {
+    font-size: 18px;
+    width: 100%;
+    text-align: center;
+  }
+
+  .nav-buttons {
+    width: 100%;
+    justify-content: space-around;
+  }
+
+  .nav-button {
+    padding: 8px 12px;
+    font-size: 12px;
+    flex: 1;
+    text-align: center;
+  }
+
+  .page-title {
+    font-size: 24px;
+    margin-bottom: 16px;
+  }
+
+  .page-container {
+    padding: 12px;
+  }
+
+  .content-card {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+
+  .scanner-input {
+    flex-direction: column;
+  }
+
+  .scanner-input input,
+  .scanner-input button {
+    width: 100%;
+    min-width: auto;
+  }
+
+  .item-row {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .form-section {
+    padding-bottom: 16px;
+  }
+
+  .section-title {
+    font-size: 14px;
+    margin-bottom: 12px;
+  }
+
+  .invoice-preview {
+    padding: clamp(12px, 3vw, 32px);
+  }
+
+  .invoice-company-name {
+    font-size: 18px;
+  }
+
+  .preview-table th,
+  .preview-table td {
+    padding: 4px;
+    font-size: 11px;
+  }
+
+  button {
+    padding: 10px 14px;
+    font-size: 13px;
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  input, textarea, select {
+    font-size: 16px;
+    padding: 10px 12px;
   }
 }
