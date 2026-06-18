@@ -1,270 +1,265 @@
 import { useEffect, useRef, useState } from 'react';
+import { Html5QrcodeScanner } from 'html5-qrcode';
 
 export default function QRScanner({ onScan, onClose }) {
   const [error, setError] = useState('');
-  const [scanning, setScanning] = useState(false);
-  const [status, setStatus] = useState('Initializing...');
   const [manualVIN, setManualVIN] = useState('');
-  const videoRef = useRef(null);
-  const streamRef = useRef(null);
+  const scannerInstanceRef = useRef(null);
+  const canvasRef = useRef(null);
 
   useEffect(() => {
-    const startCamera = async () => {
+    const initScanner = async () => {
       try {
         setError('');
-        setStatus('Initializing camera...');
-        console.log('🎬 Step 1: Starting camera...');
+        console.log('🎬 Initializing QR/Barcode scanner...');
 
-        // Check camera support
-        if (!navigator.mediaDevices?.getUserMedia) {
-          setError('📱 Camera API not supported on this device');
-          console.error('getUserMedia not available');
-          return;
-        }
+        // Wait for DOM element to be ready
+        await new Promise(resolve => setTimeout(resolve, 100));
 
-        // Wait for video ref to be ready
-        if (!videoRef.current) {
-          console.error('Video ref not ready');
-          setError('❌ Video element not ready');
-          return;
-        }
+        const scanner = new Html5QrcodeScanner(
+          'qr-scanner-container',
+          {
+            fps: 20,
+            qrdecoder: undefined,
+            rememberLastUsedCamera: true,
+            showTorchButtonIfSupported: true,
+            showZoomSliderIfSupported: true,
+            aspectRatio: 1.0,
+            disableFlip: false,
+            formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'CODABAR', 'UPC_A', 'UPC_E'],
+          },
+          false
+        );
 
-        setStatus('Requesting camera access...');
-        console.log('🎬 Step 2: Requesting camera...');
+        scannerInstanceRef.current = scanner;
 
-        // Request camera with fallback constraints
-        let stream = null;
-        try {
-          console.log('Requesting camera with preferred constraints...');
-          setStatus('Requesting camera with preferred settings...');
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: {
-              facingMode: { ideal: 'environment' },
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            },
-            audio: false
-          });
-        } catch (err1) {
-          console.warn('Preferred constraints failed, trying fallback...', err1.name);
-          setStatus('Trying fallback camera settings...');
-          try {
-            // Fallback with minimal constraints
-            stream = await navigator.mediaDevices.getUserMedia({
-              video: { facingMode: 'environment' },
-              audio: false
-            });
-          } catch (err2) {
-            console.error('Both constraint attempts failed');
-            throw err2;
-          }
-        }
+        const onScanSuccess = (decodedText) => {
+          console.log('📸 Barcode detected:', decodedText);
+          const cleanVIN = decodedText.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-        if (!stream) {
-          setError('❌ Failed to get camera stream');
-          setStatus('');
-          return;
-        }
-
-        console.log('📹 Stream obtained:', stream.getTracks().length, 'tracks');
-        setStatus('Stream obtained, setting up video...');
-
-        // Assign stream to video element
-        streamRef.current = stream;
-        videoRef.current.srcObject = stream;
-
-        // Ensure iOS compatibility
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.setAttribute('webkit-playsinline', 'true');
-        videoRef.current.setAttribute('autoplay', 'true');
-        videoRef.current.setAttribute('muted', 'true');
-
-        setStatus('Waiting for video to load...');
-        console.log('🎬 Step 3: Waiting for video to load...');
-
-        // Wait for stream to be ready with timeout
-        await new Promise((resolve, reject) => {
-          const timeout = setTimeout(() => {
-            reject(new Error('Video loading timeout'));
-          }, 5000);
-
-          const checkReady = () => {
-            console.log('Video readyState:', videoRef.current?.readyState);
-            if (videoRef.current?.readyState === 4) {
-              clearTimeout(timeout);
-              console.log('✅ Video ready');
-              resolve();
-            } else {
-              setTimeout(checkReady, 100);
+          // Accept 17-character VINs
+          if (cleanVIN.length >= 17) {
+            const vinMatch = cleanVIN.substring(0, 17);
+            if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vinMatch)) {
+              console.log('✅ Valid VIN detected:', vinMatch);
+              onScan(vinMatch);
+              scanner.clear().catch(() => {});
             }
-          };
-          checkReady();
-        });
-
-        setStatus('Starting video playback...');
-        console.log('🎬 Step 4: Starting playback...');
-
-        // Try to play
-        try {
-          const playPromise = videoRef.current.play();
-          if (playPromise !== undefined) {
-            await playPromise;
-            console.log('✅ Video playing');
           }
-        } catch (playErr) {
-          console.error('Play error:', playErr);
-          if (playErr.name !== 'NotAllowedError') {
-            throw playErr;
-          }
-        }
+        };
 
-        setScanning(true);
-        setStatus('');
-        console.log('✅ Camera initialization complete');
+        const onScanFailure = (error) => {
+          // Silent - this happens constantly during scanning
+        };
+
+        await scanner.render(onScanSuccess, onScanFailure);
+        console.log('✅ Scanner initialized successfully');
+
+        // Add scan line animation overlay
+        addScanLineOverlay();
       } catch (err) {
-        console.error('Complete error:', err.name, err.message, err);
-        if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
-          setError('📱 Camera permission denied. Check Settings > Safari > Camera');
-        } else if (err.name === 'NotFoundError') {
-          setError('📱 No camera found on this device');
-        } else if (err.name === 'NotReadableError') {
-          setError('📱 Camera is in use by another app');
-        } else if (err.name === 'AbortError') {
-          setError('📱 Camera initialization aborted');
-        } else if (err.message?.includes('timeout')) {
-          setError('📱 Camera took too long to initialize');
-        } else {
-          setError(`📱 Camera error: ${err.name || err.message}`);
-        }
-        setScanning(false);
-        setStatus('');
+        console.error('Scanner initialization error:', err);
+        setError(`❌ Scanner error: ${err.message || 'Unable to initialize scanner'}`);
       }
     };
 
-    // Delay to ensure DOM is fully mounted
-    const timer = setTimeout(startCamera, 300);
+    initScanner();
 
     return () => {
-      clearTimeout(timer);
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => {
-          track.stop();
-          console.log('📹 Camera track stopped');
-        });
-        streamRef.current = null;
+      if (scannerInstanceRef.current) {
+        scannerInstanceRef.current.clear().catch(() => {});
+        scannerInstanceRef.current = null;
       }
     };
-  }, []);
+  }, [onScan]);
+
+  const addScanLineOverlay = () => {
+    // Find the scanner element and add overlay
+    const scannerElement = document.getElementById('qr-scanner-container');
+    if (!scannerElement) return;
+
+    // Create overlay container
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      border-radius: 8px;
+      overflow: hidden;
+    `;
+
+    // Create scan line
+    const scanLine = document.createElement('div');
+    scanLine.style.cssText = `
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #FFD700, transparent);
+      top: 50%;
+      transform: translateY(-50%);
+      animation: scanAnimation 2s infinite;
+      box-shadow: 0 0 20px rgba(255, 215, 0, 0.8);
+    `;
+
+    // Create frame guide
+    const frame = document.createElement('div');
+    frame.style.cssText = `
+      position: absolute;
+      top: 25%;
+      left: 10%;
+      right: 10%;
+      height: 50%;
+      border: 2px solid rgba(255, 215, 0, 0.5);
+      border-radius: 12px;
+      box-shadow: inset 0 0 20px rgba(255, 215, 0, 0.1);
+    `;
+
+    // Create corner indicators
+    const corners = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
+    corners.forEach(corner => {
+      const cornerEl = document.createElement('div');
+      const isTop = corner.includes('top');
+      const isLeft = corner.includes('left');
+
+      cornerEl.style.cssText = `
+        position: absolute;
+        width: 30px;
+        height: 30px;
+        border: 3px solid #FFD700;
+        ${isTop ? 'top: -2px;' : 'bottom: -2px;'}
+        ${isLeft ? 'left: -2px;' : 'right: -2px;'}
+        ${isTop && isLeft ? 'border-right: none; border-bottom: none;' : ''}
+        ${isTop && !isLeft ? 'border-left: none; border-bottom: none;' : ''}
+        ${!isTop && isLeft ? 'border-right: none; border-top: none;' : ''}
+        ${!isTop && !isLeft ? 'border-left: none; border-top: none;' : ''}
+      `;
+      frame.appendChild(cornerEl);
+    });
+
+    // Create instruction text
+    const instruction = document.createElement('div');
+    instruction.style.cssText = `
+      position: absolute;
+      bottom: 20px;
+      left: 0;
+      right: 0;
+      text-align: center;
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      text-shadow: 0 2px 8px rgba(0, 0, 0, 0.8);
+      background: rgba(0, 0, 0, 0.3);
+      padding: 12px;
+      border-radius: 8px;
+      margin: 0 20px;
+    `;
+    instruction.textContent = '📸 Align VIN barcode with yellow frame';
+
+    overlay.appendChild(scanLine);
+    overlay.appendChild(frame);
+    overlay.appendChild(instruction);
+    scannerElement.style.position = 'relative';
+    scannerElement.appendChild(overlay);
+
+    // Add animation keyframes
+    const style = document.createElement('style');
+    style.textContent = `
+      @keyframes scanAnimation {
+        0% { top: 20%; }
+        50% { top: 80%; }
+        100% { top: 20%; }
+      }
+    `;
+    document.head.appendChild(style);
+  };
 
   const handleManualInput = () => {
     const cleaned = manualVIN.toUpperCase().replace(/[^A-HJ-NPR-Z0-9]/g, '');
 
     if (cleaned.length === 17 && /^[A-HJ-NPR-Z0-9]{17}$/.test(cleaned)) {
-      console.log('✅ VIN submitted:', cleaned);
+      console.log('✅ VIN submitted manually:', cleaned);
       onScan(cleaned);
     } else {
-      setError('⚠️ VIN must be exactly 17 alphanumeric characters (no I, O, Q)');
+      setError('⚠️ VIN must be exactly 17 alphanumeric characters');
     }
   };
 
   return (
-    <div style={{ marginBottom: '24px' }}>
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: '#000000',
+      zIndex: 1000,
+      display: 'flex',
+      flexDirection: 'column',
+      justifyContent: 'center',
+      alignItems: 'center',
+      padding: '20px'
+    }}>
+      {/* Scanner Container */}
       <div style={{
-        background: 'linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%)',
+        width: '100%',
+        maxWidth: '100%',
+        height: '100%',
+        maxHeight: '100%',
         borderRadius: '12px',
-        padding: '20px',
-        border: '2px solid var(--border)',
-        marginBottom: '16px'
+        overflow: 'hidden',
+        marginBottom: '20px'
       }}>
-        <h4 style={{ marginBottom: '16px', color: 'var(--text)', fontSize: '16px', fontWeight: '600' }}>
-          📱 Scan VIN with Camera
-        </h4>
+        <div
+          id="qr-scanner-container"
+          style={{
+            width: '100%',
+            height: '100%',
+            borderRadius: '12px'
+          }}
+        />
+      </div>
 
+      {/* Bottom Controls */}
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.95)',
+        padding: '20px',
+        borderTop: '2px solid #FFD700'
+      }}>
         {error && (
           <div className="error" style={{ marginBottom: '16px' }}>
             {error}
           </div>
         )}
 
-        {/* Video element - always rendered */}
-        <video
-          ref={videoRef}
-          style={{
-            width: '100%',
-            height: 'auto',
-            minHeight: '300px',
-            maxHeight: '400px',
-            borderRadius: '8px',
-            marginBottom: '16px',
-            background: '#000000',
-            display: 'block',
-            objectFit: 'cover'
-          }}
-          autoPlay
-          playsInline
-          muted
-        />
-
-        {/* Status message */}
-        {status && (
-          <p style={{
-            textAlign: 'center',
-            color: 'var(--primary)',
-            fontSize: '13px',
-            fontWeight: '500',
-            marginBottom: '12px',
-            animation: 'pulse 1s infinite'
-          }}>
-            {status}
-          </p>
-        )}
-
-        {/* Camera instructions */}
-        {scanning && (
-          <p style={{
-            textAlign: 'center',
-            color: 'var(--success)',
-            fontSize: '12px',
-            marginBottom: '12px',
-            fontStyle: 'italic',
-            fontWeight: '500'
-          }}>
-            ✅ Camera ready! Point at VIN barcode
-          </p>
-        )}
-
-        {error && (
-          <p style={{
-            textAlign: 'center',
-            color: 'var(--danger)',
-            fontSize: '12px',
-            marginBottom: '12px'
-          }}>
-            {error}
-          </p>
-        )}
-
         {/* Manual VIN Input */}
         <div style={{
-          marginTop: '16px',
+          marginBottom: '16px',
           padding: '16px',
-          background: 'white',
+          background: 'rgba(255, 255, 255, 0.05)',
           borderRadius: '8px',
-          border: '1px solid var(--border)'
+          border: '1px solid #FFD700'
         }}>
           <label style={{
             display: 'block',
             marginBottom: '8px',
             fontSize: '12px',
             fontWeight: '600',
-            color: 'var(--text-light)'
+            color: '#FFD700'
           }}>
-            📝 Manual VIN Input (Always Available):
+            📝 Manual VIN Input (Fallback):
           </label>
           <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
             <input
               type="text"
-              placeholder="XXXXXXXXXXXXXXXXX"
+              placeholder="Enter 17-character VIN"
               value={manualVIN}
               onChange={(e) => {
                 const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -276,12 +271,14 @@ export default function QRScanner({ onScan, onClose }) {
               style={{
                 flex: 1,
                 padding: '10px 12px',
-                border: '2px solid var(--border)',
+                border: '2px solid #FFD700',
                 borderRadius: '8px',
                 fontSize: '16px',
                 fontFamily: 'monospace',
                 fontWeight: '600',
-                letterSpacing: '1px'
+                letterSpacing: '1px',
+                backgroundColor: 'rgba(255, 255, 255, 0.1)',
+                color: 'white'
               }}
             />
             <button
@@ -295,19 +292,28 @@ export default function QRScanner({ onScan, onClose }) {
           </div>
           <p style={{
             fontSize: '11px',
-            color: 'var(--text-lighter)',
+            color: '#FFD700',
             marginTop: '6px',
             marginBottom: 0
           }}>
-            {manualVIN.length}/17 characters • No I, O, Q allowed
+            {manualVIN.length}/17 characters
           </p>
         </div>
-      </div>
 
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center' }}>
-        <button className="btn-secondary" onClick={onClose}>
-          Close Scanner
-        </button>
+        {/* Close Button */}
+        <div style={{ display: 'flex', justifyContent: 'center' }}>
+          <button
+            className="btn-secondary"
+            onClick={onClose}
+            style={{
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              color: '#FFD700',
+              border: '2px solid #FFD700'
+            }}
+          >
+            ✕ Close Scanner
+          </button>
+        </div>
       </div>
     </div>
   );
