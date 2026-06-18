@@ -1,13 +1,33 @@
 :root {
-  --primary: #667eea;
-  --primary-dark: #764ba2;
-  --success: #48bb78;
-  --warning: #ed8936;
-  --danger: #f56565;
-  --light: #f7fafc;
-  --border: #e2e8f0;
-  --text: #2d3748;
-  --text-light: #718096;
+  /* Modern Professional Color Palette - UI/UX Pro Max */
+  --primary: #4F46E5;
+  --primary-dark: #4338CA;
+  --primary-light: #818CF8;
+  --secondary: #06B6D4;
+  --secondary-light: #22D3EE;
+  --success: #10B981;
+  --success-light: #34D399;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --danger-light: #FCA5A5;
+
+  /* Neutral Palette */
+  --light: #F8FAFC;
+  --light-secondary: #E2E8F0;
+  --border: #CBD5E1;
+  --text: #1E293B;
+  --text-light: #64748B;
+  --text-lighter: #94A3B8;
+
+  /* Shadows - Soft shadows for modern look */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.07);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.1);
+
+  /* Typography */
+  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+  --font-mono: 'Fira Code', 'Monaco', monospace;
 }
 
 * {
@@ -21,7 +41,7 @@ html, body, #root {
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+  font-family: var(--font-family);
   color: var(--text);
   background: var(--light);
 }
@@ -29,66 +49,88 @@ body {
 button {
   cursor: pointer;
   border: none;
-  border-radius: 6px;
-  padding: 8px 16px;
+  border-radius: 8px;
+  padding: 10px 18px;
   font-size: 14px;
-  font-weight: 500;
-  transition: all 0.2s;
+  font-weight: 600;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  font-family: var(--font-family);
+  letter-spacing: 0.3px;
 }
 
 button:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lg);
 }
 
 button:active {
   transform: translateY(0);
 }
 
+button:focus {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
 .btn-primary {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
   color: white;
+  box-shadow: var(--shadow-md);
 }
 
 .btn-primary:hover {
-  background: var(--primary-dark);
+  box-shadow: var(--shadow-lg);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+}
+
+.btn-primary:active {
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-success {
   background: var(--success);
   color: white;
+  box-shadow: var(--shadow-md);
 }
 
 .btn-success:hover {
-  background: #38a169;
+  background: var(--success-light);
+  box-shadow: var(--shadow-lg);
 }
 
 .btn-warning {
   background: var(--warning);
   color: white;
+  box-shadow: var(--shadow-md);
 }
 
 .btn-warning:hover {
-  background: #dd6b20;
+  background: #F08C00;
+  box-shadow: var(--shadow-lg);
 }
 
 .btn-danger {
   background: var(--danger);
   color: white;
+  box-shadow: var(--shadow-md);
 }
 
 .btn-danger:hover {
-  background: #e53e3e;
+  background: #DC2626;
+  box-shadow: var(--shadow-lg);
 }
 
 .btn-secondary {
   background: white;
   color: var(--text);
-  border: 1px solid var(--border);
+  border: 2px solid var(--border);
+  box-shadow: var(--shadow-sm);
 }
 
 .btn-secondary:hover {
   background: var(--light);
+  border-color: var(--primary);
+  color: var(--primary);
 }
 
 .btn-small {
@@ -97,18 +139,24 @@ button:active {
 }
 
 input, textarea, select {
-  padding: 10px 12px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
+  padding: 11px 14px;
+  border: 2px solid var(--border);
+  border-radius: 8px;
   font-size: 14px;
-  font-family: inherit;
-  transition: border-color 0.2s;
+  font-family: var(--font-family);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: white;
+}
+
+input:hover, textarea:hover, select:hover {
+  border-color: var(--primary-light);
 }
 
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.1);
+  background: white;
 }
 
 .container {
@@ -119,9 +167,16 @@ input:focus, textarea:focus, select:focus {
 
 .card {
   background: white;
-  border-radius: 8px;
+  border-radius: 12px;
   padding: 24px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--light-secondary);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card:hover {
+  box-shadow: var(--shadow-lg);
+  border-color: var(--primary-light);
 }
 
 .form-group {
