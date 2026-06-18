@@ -5,6 +5,22 @@ export async function generateInvoicePDF(invoice, businessConfig) {
   try {
     console.log('Generating PDF for invoice:', invoice.invoiceNumber);
 
+    if (!invoice) {
+      throw new Error('Invoice data is missing');
+    }
+    if (!businessConfig) {
+      console.warn('Business config missing, using defaults');
+      businessConfig = {
+        businessName: 'Sparkle Auto Detailing',
+        businessAddress: '123 Main Street, Your City, State 12345',
+        businessPhone: '(555) 987-6543',
+        businessEmail: 'info@sparkledetail.com',
+        taxRate: 0.08,
+        paymentTermsDays: 14,
+        currencySymbol: '$'
+      };
+    }
+
     const doc = new jsPDF({
       orientation: 'portrait',
       unit: 'mm',

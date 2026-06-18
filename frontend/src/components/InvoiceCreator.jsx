@@ -139,13 +139,19 @@ export default function InvoiceCreator({ vehicle, businessConfig, onClose }) {
 
   const handleDownloadPDF = async () => {
     try {
-      console.log('Starting PDF generation...', invoiceData);
+      console.log('Starting PDF generation...');
+      console.log('Invoice data:', invoiceData);
+      console.log('Business config:', businessConfig);
+
       const doc = await generateInvoicePDF(invoiceData, businessConfig);
-      console.log('PDF generated successfully, downloading...');
+      console.log('PDF generated successfully');
+      console.log('PDF object:', doc);
+
       downloadPDF(doc, `Invoice_${invoiceData.invoiceNumber}.pdf`);
       console.log('PDF download initiated');
     } catch (err) {
       console.error('PDF generation error:', err);
+      console.error('Error stack:', err.stack);
       setError(`Failed to generate PDF: ${err.message}`);
     }
   };
