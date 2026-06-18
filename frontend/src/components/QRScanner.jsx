@@ -42,8 +42,14 @@ export default function QRScanner({ onScan, onClose }) {
             const vinMatch = cleanVIN.substring(0, 17);
             if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vinMatch)) {
               console.log('✅ Valid VIN detected:', vinMatch);
-              onScan(vinMatch);
+
+              // Stop scanning and close scanner after small delay
               scanner.clear().catch(() => {});
+
+              // Call onScan which should trigger color selection and invoice creation
+              setTimeout(() => {
+                onScan(vinMatch);
+              }, 500);
             }
           }
         };
@@ -201,117 +207,122 @@ export default function QRScanner({ onScan, onClose }) {
       flexDirection: 'column',
       justifyContent: 'center',
       alignItems: 'center',
-      padding: '20px'
+      width: '100vw',
+      height: '100vh',
+      margin: 0,
+      padding: 0,
+      overflow: 'hidden'
     }}>
-      {/* Scanner Container */}
-      <div style={{
-        width: '100%',
-        maxWidth: '100%',
-        height: '100%',
-        maxHeight: '100%',
-        borderRadius: '12px',
-        overflow: 'hidden',
-        marginBottom: '20px'
-      }}>
-        <div
-          id="qr-scanner-container"
-          style={{
-            width: '100%',
-            height: '100%',
-            borderRadius: '12px'
-          }}
-        />
-      </div>
+      {/* Full Scanner - Landscape View */}
+      <div
+        id="qr-scanner-container"
+        style={{
+          width: '100%',
+          height: '100%',
+          backgroundColor: '#000000',
+          borderRadius: 0,
+          overflow: 'hidden'
+        }}
+      />
 
-      {/* Bottom Controls */}
+      {/* Error Display - Overlay on Scanner */}
+      {error && (
+        <div style={{
+          position: 'fixed',
+          top: '20px',
+          left: '20px',
+          right: '20px',
+          backgroundColor: 'rgba(239, 68, 68, 0.95)',
+          padding: '16px',
+          borderRadius: '8px',
+          color: 'white',
+          fontSize: '14px',
+          fontWeight: '600',
+          textAlign: 'center',
+          zIndex: 1001,
+          boxShadow: '0 4px 12px rgba(0, 0, 0, 0.8)'
+        }}>
+          {error}
+        </div>
+      )}
+
+      {/* Manual Input Fallback - Bottom Panel */}
       <div style={{
         position: 'fixed',
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: 'rgba(0, 0, 0, 0.95)',
-        padding: '20px',
-        borderTop: '2px solid #FFD700'
+        backgroundColor: 'rgba(0, 0, 0, 0.98)',
+        padding: '16px',
+        borderTop: '3px solid #FFD700',
+        zIndex: 1001,
+        maxHeight: '120px',
+        overflow: 'auto'
       }}>
-        {error && (
-          <div className="error" style={{ marginBottom: '16px' }}>
-            {error}
-          </div>
-        )}
-
-        {/* Manual VIN Input */}
         <div style={{
-          marginBottom: '16px',
-          padding: '16px',
-          background: 'rgba(255, 255, 255, 0.05)',
-          borderRadius: '8px',
-          border: '1px solid #FFD700'
+          maxWidth: '600px',
+          margin: '0 auto',
+          display: 'flex',
+          gap: '8px',
+          alignItems: 'center'
         }}>
-          <label style={{
-            display: 'block',
-            marginBottom: '8px',
-            fontSize: '12px',
-            fontWeight: '600',
-            color: '#FFD700'
-          }}>
-            📝 Manual VIN Input (Fallback):
-          </label>
-          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-            <input
-              type="text"
-              placeholder="Enter 17-character VIN"
-              value={manualVIN}
-              onChange={(e) => {
-                const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
-                setManualVIN(val.slice(0, 17));
-                setError('');
-              }}
-              maxLength="17"
-              autoComplete="off"
-              style={{
-                flex: 1,
-                padding: '10px 12px',
-                border: '2px solid #FFD700',
-                borderRadius: '8px',
-                fontSize: '16px',
-                fontFamily: 'monospace',
-                fontWeight: '600',
-                letterSpacing: '1px',
-                backgroundColor: 'rgba(255, 255, 255, 0.1)',
-                color: 'white'
-              }}
-            />
-            <button
-              onClick={handleManualInput}
-              className="btn-primary"
-              disabled={manualVIN.length !== 17}
-              style={{ opacity: manualVIN.length === 17 ? 1 : 0.6, whiteSpace: 'nowrap' }}
-            >
-              Submit
-            </button>
-          </div>
-          <p style={{
-            fontSize: '11px',
-            color: '#FFD700',
-            marginTop: '6px',
-            marginBottom: 0
-          }}>
-            {manualVIN.length}/17 characters
-          </p>
-        </div>
-
-        {/* Close Button */}
-        <div style={{ display: 'flex', justifyContent: 'center' }}>
-          <button
-            className="btn-secondary"
-            onClick={onClose}
+          <input
+            type="text"
+            placeholder="Type VIN (17 chars)"
+            value={manualVIN}
+            onChange={(e) => {
+              const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+              setManualVIN(val.slice(0, 17));
+              setError('');
+            }}
+            onKeyPress={(e) => {
+              if (e.key === 'Enter' && manualVIN.length === 17) {
+                handleManualInput();
+              }
+            }}
+            maxLength="17"
+            autoComplete="off"
             style={{
+              flex: 1,
+              padding: '10px 12px',
+              border: '2px solid #FFD700',
+              borderRadius: '6px',
+              fontSize: '14px',
+              fontFamily: 'monospace',
+              fontWeight: '600',
+              letterSpacing: '1px',
               backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: '#FFD700',
-              border: '2px solid #FFD700'
+              color: '#FFD700'
+            }}
+          />
+          <button
+            onClick={handleManualInput}
+            disabled={manualVIN.length !== 17}
+            className="btn-primary"
+            style={{
+              opacity: manualVIN.length === 17 ? 1 : 0.5,
+              whiteSpace: 'nowrap',
+              padding: '10px 16px',
+              fontSize: '12px'
             }}
           >
-            ✕ Close Scanner
+            Submit
+          </button>
+          <button
+            onClick={onClose}
+            style={{
+              padding: '10px 16px',
+              backgroundColor: 'rgba(255, 255, 255, 0.1)',
+              color: '#FFD700',
+              border: '2px solid #FFD700',
+              borderRadius: '6px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              fontSize: '12px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            ✕ Close
           </button>
         </div>
       </div>
