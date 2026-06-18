@@ -13,18 +13,41 @@ export default function QRScanner({ onScan, onClose }) {
       try {
         setError('');
 
-        // Request camera permissions
-        try {
-          await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
-        } catch (permError) {
-          setError('📱 Camera permission denied. Please enable camera access in your browser settings.');
-          console.error('Camera permission error:', permError);
+        // Wait for DOM element to be ready
+        let attempts = 0;
+        const maxAttempts = 20;
+        const element = await new Promise((resolve) => {
+          const checkElement = () => {
+            const el = document.getElementById('qr-scanner-element');
+            if (el) {
+              resolve(el);
+            } else if (attempts < maxAttempts) {
+              attempts++;
+              setTimeout(checkElement, 100);
+            } else {
+              resolve(null);
+            }
+          };
+          checkElement();
+        });
+
+        if (!element) {
+          setError('❌ Scanner element not found. Please try again.');
           return;
         }
 
-        // Check if element exists
-        if (!document.getElementById('qr-scanner-element')) {
-          setError('Scanner element not found');
+        // Request camera permissions
+        try {
+          await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { ideal: 'environment' },
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          });
+        } catch (permError) {
+          setError('📱 Camera permission denied. Please enable camera access in your browser settings.');
+          console.error('Camera permission error:', permError);
           return;
         }
 
@@ -36,8 +59,9 @@ export default function QRScanner({ onScan, onClose }) {
             rememberLastUsedCamera: true,
             showTorchButtonIfSupported: true,
             showZoomSliderIfSupported: true,
-            aspectRatio: 1,
+            aspectRatio: 1.0,
             disableFlip: false,
+            formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'CODABAR'],
           },
           false
         );
@@ -51,8 +75,11 @@ export default function QRScanner({ onScan, onClose }) {
           if (cleanVIN.length >= 17) {
             const vinMatch = cleanVIN.substring(0, 17);
             if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vinMatch)) {
+              console.log('VIN detected:', vinMatch);
               onScan(vinMatch);
-              scanner.clear().catch(() => {});
+              if (scanner) {
+                scanner.clear().catch(() => {});
+              }
               setScanning(false);
             }
           }
@@ -60,12 +87,12 @@ export default function QRScanner({ onScan, onClose }) {
 
         const onScanFailure = (error) => {
           // Silent failures are OK during scanning
-          console.debug('Scan attempt:', error);
         };
 
+        console.log('Rendering scanner...');
         await scanner.render(onScanSuccess, onScanFailure);
         setScanning(true);
-        console.log('Scanner initialized successfully');
+        console.log('✅ Scanner initialized successfully');
       } catch (err) {
         console.error('Scanner initialization error:', err);
         setError(`❌ Scanner error: ${err.message || 'Unable to access camera'}`);
@@ -73,9 +100,11 @@ export default function QRScanner({ onScan, onClose }) {
       }
     };
 
-    initScanner();
+    // Small delay to ensure DOM is ready
+    const timer = setTimeout(initScanner, 100);
 
     return () => {
+      clearTimeout(timer);
       if (scannerInstanceRef.current) {
         scannerInstanceRef.current.clear().catch(err => {
           console.debug('Cleanup error:', err);
