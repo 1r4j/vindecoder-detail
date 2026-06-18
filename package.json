@@ -17,5 +17,13 @@
     "nhtsa"
   ],
   "author": "Your Name",
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1r4j/vindecoder-detail.git"
+  },
+  "bugs": {
+    "url": "https://github.com/1r4j/vindecoder-detail/issues"
+  },
+  "homepage": "https://github.com/1r4j/vindecoder-detail#readme"
 }
