@@ -11,6 +11,43 @@ export default function QRScanner({ onScan, onClose }) {
     const initScanner = async () => {
       try {
         setError('');
+        console.log('🎬 Requesting camera permission...');
+
+        // Request camera permission FIRST (back camera)
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: {
+              facingMode: { exact: 'environment' }
+            },
+            audio: false
+          });
+
+          // Stop the stream - we just needed to trigger the permission prompt
+          stream.getTracks().forEach(track => track.stop());
+          console.log('✅ Camera permission granted');
+        } catch (permError) {
+          console.warn('Exact environment camera not available, trying ideal...');
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: {
+                facingMode: { ideal: 'environment' }
+              },
+              audio: false
+            });
+            stream.getTracks().forEach(track => track.stop());
+            console.log('✅ Camera permission granted (ideal)');
+          } catch (err2) {
+            if (err2.name === 'NotAllowedError') {
+              setError('❌ Camera permission denied. Please allow camera access in your phone settings.');
+            } else if (err2.name === 'NotFoundError') {
+              setError('❌ No camera found on this device');
+            } else {
+              setError(`❌ Camera error: ${err2.message}`);
+            }
+            return;
+          }
+        }
+
         console.log('🎬 Initializing QR/Barcode scanner...');
 
         // Wait for DOM element to be ready
@@ -26,6 +63,7 @@ export default function QRScanner({ onScan, onClose }) {
             showZoomSliderIfSupported: true,
             aspectRatio: 1.0,
             disableFlip: false,
+            facingMode: 'environment',
             formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'CODABAR', 'UPC_A', 'UPC_E'],
           },
           false
