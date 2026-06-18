@@ -15,9 +15,10 @@ export default function QRScanner({ onScan, onClose }) {
 
         // Request camera permission FIRST (back camera)
         try {
+          console.log('Requesting camera access...');
           const stream = await navigator.mediaDevices.getUserMedia({
             video: {
-              facingMode: { exact: 'environment' }
+              facingMode: 'environment'
             },
             audio: false
           });
@@ -26,26 +27,15 @@ export default function QRScanner({ onScan, onClose }) {
           stream.getTracks().forEach(track => track.stop());
           console.log('✅ Camera permission granted');
         } catch (permError) {
-          console.warn('Exact environment camera not available, trying ideal...');
-          try {
-            const stream = await navigator.mediaDevices.getUserMedia({
-              video: {
-                facingMode: { ideal: 'environment' }
-              },
-              audio: false
-            });
-            stream.getTracks().forEach(track => track.stop());
-            console.log('✅ Camera permission granted (ideal)');
-          } catch (err2) {
-            if (err2.name === 'NotAllowedError') {
-              setError('❌ Camera permission denied. Please allow camera access in your phone settings.');
-            } else if (err2.name === 'NotFoundError') {
-              setError('❌ No camera found on this device');
-            } else {
-              setError(`❌ Camera error: ${err2.message}`);
-            }
-            return;
+          console.error('Camera permission error:', permError.name);
+          if (permError.name === 'NotAllowedError') {
+            setError('❌ Camera permission denied. Please allow camera access in your phone settings.');
+          } else if (permError.name === 'NotFoundError') {
+            setError('❌ No camera found on this device');
+          } else {
+            setError(`❌ Camera error: ${permError.message}`);
           }
+          return;
         }
 
         console.log('🎬 Initializing QR/Barcode scanner...');
@@ -56,15 +46,13 @@ export default function QRScanner({ onScan, onClose }) {
         const scanner = new Html5QrcodeScanner(
           'qr-scanner-container',
           {
-            fps: 20,
+            fps: 15,
             qrdecoder: undefined,
             rememberLastUsedCamera: true,
             showTorchButtonIfSupported: true,
             showZoomSliderIfSupported: true,
-            aspectRatio: 1.0,
             disableFlip: false,
-            facingMode: 'environment',
-            formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'CODABAR', 'UPC_A', 'UPC_E'],
+            formatsToSupport: ['QR_CODE', 'CODE_128', 'CODE_39', 'CODABAR'],
           },
           false
         );
