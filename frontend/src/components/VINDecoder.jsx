@@ -14,15 +14,15 @@ export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
   const [showScanner, setShowScanner] = useState(false);
   const [recentVehicles, setRecentVehicles] = useState([]);
 
-  const handleDecode = async (e) => {
-    if (e) e.preventDefault();
+  const decodeVIN = async (vinToDecude) => {
     setError('');
     setVehicle(null);
     setVehicleColor('');
     setLoading(true);
 
     try {
-      const response = await vehicleService.decode(vin.toUpperCase());
+      const response = await vehicleService.decode(vinToDecude.toUpperCase());
+      console.log('✅ VIN decoded:', vinToDecude, response.data.data);
       setVehicle(response.data.data);
       setVehicleColor(response.data.data.color || '');
 
@@ -31,19 +31,31 @@ export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
         return [response.data.data, ...filtered].slice(0, 5);
       });
     } catch (err) {
+      console.error('Decode error:', err);
       setError(err.response?.data?.error || 'Failed to decode VIN. Please check and try again.');
     } finally {
       setLoading(false);
     }
   };
 
+  const handleDecode = async (e) => {
+    if (e) e.preventDefault();
+    if (vin.length !== 17) {
+      setError('VIN must be 17 characters');
+      return;
+    }
+    await decodeVIN(vin);
+  };
+
   const handleScannerScan = (scannedVin) => {
+    console.log('🎯 VIN scanned:', scannedVin);
     setVin(scannedVin);
     setShowScanner(false);
+
+    // Decode immediately with the scanned VIN (don't wait for state update)
     setTimeout(() => {
-      const event = { preventDefault: () => {} };
-      handleDecode(event);
-    }, 100);
+      decodeVIN(scannedVin);
+    }, 300);
   };
 
   const handleColorChange = async (newColor) => {
