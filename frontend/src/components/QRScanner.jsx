@@ -9,6 +9,61 @@ export default function QRScanner({ onScan, onClose }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const streamRef = useRef(null);
   const scanningRef = useRef(true);
+  const onCloseRef = useRef(onClose);
+
+  // Update ref when onClose changes
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  // Define handleClose outside useEffect
+  const handleClose = () => {
+    console.log('Closing scanner...');
+
+    // Stop scanning
+    scanningRef.current = false;
+
+    // Stop camera stream
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Camera track stopped');
+      });
+      streamRef.current = null;
+    }
+
+    // Unlock orientation
+    if (screen.orientation) {
+      try {
+        screen.orientation.unlock();
+        console.log('Orientation unlocked');
+      } catch (err) {
+        console.warn('Could not unlock orientation:', err);
+      }
+    }
+
+    // Exit fullscreen
+    if (document.fullscreenElement) {
+      try {
+        document.exitFullscreen();
+        console.log('Fullscreen exited');
+      } catch (err) {
+        console.warn('Could not exit fullscreen:', err);
+      }
+    }
+
+    // Restore body styles
+    document.body.style.overflow = 'auto';
+    document.body.style.position = 'relative';
+    document.body.style.width = 'auto';
+    document.documentElement.style.overflow = 'auto';
+
+    // Call parent close handler
+    console.log('Calling onClose');
+    setTimeout(() => {
+      onCloseRef.current();
+    }, 100);
+  };
 
   useEffect(() => {
     // Hide body scrolling and lock viewport
@@ -16,6 +71,16 @@ export default function QRScanner({ onScan, onClose }) {
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
     document.documentElement.style.overflow = 'hidden';
+
+    // Handle ESC key to close scanner
+    const handleKeyPress = (e) => {
+      if (e.key === 'Escape') {
+        console.log('ESC pressed - closing scanner');
+        handleClose();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyPress);
 
     const startScanning = async () => {
       try {
@@ -84,6 +149,9 @@ export default function QRScanner({ onScan, onClose }) {
 
     return () => {
       scanningRef.current = false;
+
+      // Remove keyboard listener
+      document.removeEventListener('keydown', handleKeyPress);
 
       // Restore body
       document.body.style.overflow = 'auto';
@@ -163,19 +231,6 @@ export default function QRScanner({ onScan, onClose }) {
       }
     }
     return null;
-  };
-
-  const handleClose = () => {
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-    }
-    if (screen.orientation) {
-      screen.orientation.unlock().catch(() => {});
-    }
-    if (document.fullscreenElement) {
-      document.exitFullscreen().catch(() => {});
-    }
-    onClose();
   };
 
   return (
@@ -319,7 +374,13 @@ export default function QRScanner({ onScan, onClose }) {
 
       {/* Close Button - Top Right */}
       <button
-        onClick={handleClose}
+        type="button"
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          console.log('Close button clicked');
+          handleClose();
+        }}
         style={{
           position: 'absolute',
           top: '30px',
@@ -327,8 +388,8 @@ export default function QRScanner({ onScan, onClose }) {
           width: '56px',
           height: '56px',
           borderRadius: '50%',
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
-          border: '2px solid rgba(255, 255, 255, 0.5)',
+          backgroundColor: 'rgba(0, 0, 0, 0.7)',
+          border: '2px solid rgba(255, 255, 255, 0.6)',
           color: 'white',
           fontSize: '28px',
           fontWeight: 'bold',
@@ -336,18 +397,21 @@ export default function QRScanner({ onScan, onClose }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          transition: 'all 0.3s',
+          transition: 'all 0.3s ease',
           zIndex: 4,
           padding: 0,
-          lineHeight: '1'
+          lineHeight: '1',
+          outline: 'none'
         }}
         onMouseEnter={(e) => {
-          e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.8)';
-          e.target.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+          e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+          e.target.style.borderColor = 'rgba(255, 255, 255, 0.9)';
+          e.target.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3)';
         }}
         onMouseLeave={(e) => {
-          e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.6)';
-          e.target.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+          e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+          e.target.style.borderColor = 'rgba(255, 255, 255, 0.6)';
+          e.target.style.boxShadow = 'none';
         }}
       >
         ✕
