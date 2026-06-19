@@ -221,16 +221,17 @@ export default function QRScanner({ onScan, onClose }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Crop to VIN area (middle section where VIN text appears)
-      const cropTop = Math.floor(canvas.height * 0.3);
-      const cropHeight = Math.floor(canvas.height * 0.4);
-      const cropLeft = Math.floor(canvas.width * 0.05);
-      const cropWidth = Math.floor(canvas.width * 0.9);
+      // Crop to VIN text area more precisely (narrow horizontal band)
+      // VIN text typically appears in a single line
+      const cropTop = Math.floor(canvas.height * 0.35);
+      const cropHeight = Math.floor(canvas.height * 0.15); // Narrower crop for single line
+      const cropLeft = Math.floor(canvas.width * 0.08);
+      const cropWidth = Math.floor(canvas.width * 0.85);
 
       const croppedImageData = ctx.getImageData(cropLeft, cropTop, cropWidth, cropHeight);
 
-      // Apply preprocessing
-      enhanceImage(croppedImageData);
+      // Apply aggressive preprocessing for text clarity
+      enhanceImageForText(croppedImageData);
 
       // Create cropped canvas
       const croppedCanvas = document.createElement('canvas');
@@ -248,11 +249,12 @@ export default function QRScanner({ onScan, onClose }) {
           const result = await ocrWorkerRef.current.recognize(blob, 'eng');
           const text = result.data.text;
 
-          console.log('📝 OCR Result:', text);
+          console.log('📝 Raw OCR text:', JSON.stringify(text));
+          console.log('📊 OCR Confidence:', result.data.confidence);
 
           if (text) {
             const vin = extractVIN(text);
-            console.log('Extracted VIN:', vin);
+            console.log('Extracted VIN candidate:', vin);
 
             if (vin && !detectedVINsRef.current.has(vin)) {
               detectedVINsRef.current.add(vin);
@@ -276,28 +278,72 @@ export default function QRScanner({ onScan, onClose }) {
     }
   };
 
-  const enhanceImage = (imageData) => {
+  const enhanceImageForText = (imageData) => {
     const data = imageData.data;
     const len = data.length;
 
-    // Grayscale + contrast enhancement
+    // Step 1: Convert to grayscale
+    const grayscale = new Uint8ClampedArray(len);
     for (let i = 0; i < len; i += 4) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
-
-      // Convert to grayscale
       const gray = r * 0.299 + g * 0.587 + b * 0.114;
-
-      // Increase contrast
-      const contrast = 2.5;
-      const enhanced = (gray - 128) * contrast + 128;
-      const clamped = Math.max(0, Math.min(255, enhanced));
-
-      data[i] = clamped;
-      data[i + 1] = clamped;
-      data[i + 2] = clamped;
+      grayscale[i] = gray;
+      grayscale[i + 1] = gray;
+      grayscale[i + 2] = gray;
+      grayscale[i + 3] = data[i + 3];
     }
+
+    // Step 2: Calculate histogram for adaptive thresholding
+    const histogram = new Array(256).fill(0);
+    for (let i = 0; i < len; i += 4) {
+      histogram[grayscale[i]]++;
+    }
+
+    // Step 3: Find optimal threshold (Otsu's method simplified)
+    let sum = 0;
+    let sumB = 0;
+    let wB = 0;
+    let wF = 0;
+    let mB = 0;
+    let mF = 0;
+    let between = 0;
+    let threshold = 0;
+
+    for (let i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+
+    for (let i = 0; i < 256; i++) {
+      wB += histogram[i];
+      if (wB === 0) continue;
+
+      wF = len / 4 - wB;
+      if (wF === 0) break;
+
+      sumB += i * histogram[i];
+      mB = sumB / wB;
+      mF = (sum - sumB) / wF;
+
+      const mb = mB - mF;
+      const thisBetween = wB * wF * mb * mb;
+
+      if (thisBetween > between) {
+        between = thisBetween;
+        threshold = i;
+      }
+    }
+
+    // Step 4: Apply binary thresholding
+    for (let i = 0; i < len; i += 4) {
+      const value = grayscale[i] > threshold ? 255 : 0;
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
+    }
+
+    console.log('Image preprocessing - Threshold:', threshold);
   };
 
   const extractVIN = (text) => {
