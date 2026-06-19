@@ -146,7 +146,7 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
     }
   };
 
-  // OCR text detection
+  // OCR text detection with multi-region scanning
   const scanWithOCR = async () => {
     if (!scanningRef.current || !videoRef.current || !canvasRef.current) return;
 
@@ -176,27 +176,57 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
       const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
       scanQRCode(imageData);
 
-      // Crop to VIN text area for OCR
-      const cropTop = Math.floor(canvas.height * 0.35);
-      const cropHeight = Math.floor(canvas.height * 0.15);
-      const cropLeft = Math.floor(canvas.width * 0.08);
-      const cropWidth = Math.floor(canvas.width * 0.85);
+      // Multi-region scanning strategy to handle obstructed visibility
+      const scanRegions = [
+        // Central region (primary - typical VIN location on dashboard)
+        { top: 0.35, height: 0.15, left: 0.08, width: 0.85, name: 'Center' },
+        // Upper region (windshield VIN label)
+        { top: 0.15, height: 0.15, left: 0.1, width: 0.8, name: 'Upper' },
+        // Lower region (door jamb area)
+        { top: 0.55, height: 0.15, left: 0.05, width: 0.9, name: 'Lower' },
+        // Left region (door sticker)
+        { top: 0.3, height: 0.2, left: 0.0, width: 0.35, name: 'Left' },
+        // Right region (opposite door sticker)
+        { top: 0.3, height: 0.2, left: 0.65, width: 0.35, name: 'Right' }
+      ];
 
-      const croppedImageData = ctx.getImageData(cropLeft, cropTop, cropWidth, cropHeight);
-      enhanceImageForText(croppedImageData);
+      for (const region of scanRegions) {
+        const cropTop = Math.floor(canvas.height * region.top);
+        const cropHeight = Math.floor(canvas.height * region.height);
+        const cropLeft = Math.floor(canvas.width * region.left);
+        const cropWidth = Math.floor(canvas.width * region.width);
 
-      const croppedCanvas = document.createElement('canvas');
-      croppedCanvas.width = cropWidth;
-      croppedCanvas.height = cropHeight;
-      const croppedCtx = croppedCanvas.getContext('2d');
-      croppedCtx.putImageData(croppedImageData, 0, 0);
+        try {
+          const croppedImageData = ctx.getImageData(cropLeft, cropTop, cropWidth, cropHeight);
 
-      const result = await ocrWorkerRef.current.recognize(croppedCanvas);
+          // Apply advanced image enhancement
+          enhanceImageForText(croppedImageData);
 
-      if (result.data.text) {
-        const vinMatch = result.data.text.match(/[A-HJ-NPR-Z0-9]{17}/);
-        if (vinMatch) {
-          handleVINDetected(vinMatch[0], 'OCR Text');
+          const croppedCanvas = document.createElement('canvas');
+          croppedCanvas.width = cropWidth;
+          croppedCanvas.height = cropHeight;
+          const croppedCtx = croppedCanvas.getContext('2d');
+          croppedCtx.putImageData(croppedImageData, 0, 0);
+
+          const result = await ocrWorkerRef.current.recognize(croppedCanvas);
+
+          if (result.data.text && result.data.confidence > 0.3) {
+            // Try to find 17-character VIN
+            const vinMatch = result.data.text.match(/[A-HJ-NPR-Z0-9]{17}/);
+            if (vinMatch) {
+              handleVINDetected(vinMatch[0], `OCR Text (${region.name})`);
+              return; // Stop scanning other regions once found
+            }
+
+            // Also look for partial VINs that might be obstructed
+            const partialVIN = result.data.text.match(/[A-HJ-NPR-Z0-9]{12,16}/);
+            if (partialVIN && result.data.confidence > 0.6) {
+              console.log(`Partial VIN detected in ${region.name}: ${partialVIN[0]}`);
+            }
+          }
+        } catch (err) {
+          console.log(`Region ${region.name} scan failed:`, err.message);
+          continue;
         }
       }
 
@@ -213,22 +243,232 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
 
   const enhanceImageForText = (imageData) => {
     const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
 
+    // Step 1: Convert to grayscale and normalize
+    const grayData = new Uint8ClampedArray(width * height);
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
       const g = data[i + 1];
       const b = data[i + 2];
-
       const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-
-      const low = 50;
-      const high = 200;
-      const threshold = (gray < (low + high) / 2) ? 0 : 255;
-
-      data[i] = threshold;
-      data[i + 1] = threshold;
-      data[i + 2] = threshold;
+      grayData[i / 4] = gray;
     }
+
+    // Step 2: Detect lighting conditions
+    let mean = 0;
+    for (let i = 0; i < grayData.length; i++) {
+      mean += grayData[i];
+    }
+    mean /= grayData.length;
+
+    // Step 3: Adaptive histogram equalization (CLAHE-like)
+    const enhancedData = new Uint8ClampedArray(width * height);
+    const clipLimit = 2.0;
+    const bins = 256;
+
+    for (let i = 0; i < grayData.length; i++) {
+      let value = grayData[i];
+
+      // Boost dark areas (low light compensation)
+      if (mean < 100) {
+        value = Math.min(255, value * 1.4);
+      }
+
+      // Reduce glare in bright areas
+      if (mean > 180) {
+        value = Math.min(255, value * 0.95);
+      }
+
+      // Increase contrast around mid-tones
+      const normalized = value / 255;
+      value = Math.pow(normalized, 0.8) * 255;
+
+      enhancedData[i] = Math.round(value);
+    }
+
+    // Step 4: Apply bilateral filter to reduce noise while preserving edges
+    const filteredData = bilateralFilter(enhancedData, width, height);
+
+    // Step 5: Adaptive thresholding (Otsu's method)
+    const threshold = calculateOtsuThreshold(filteredData);
+
+    // Step 6: Morphological operations (erosion then dilation) to clean up
+    const morphData = morphologicalOps(filteredData, width, height, threshold);
+
+    // Step 7: Apply deglare filter for reflection removal
+    const deglaredData = removeGlare(morphData, width, height);
+
+    // Convert back to RGBA
+    for (let i = 0; i < grayData.length; i++) {
+      const value = deglaredData[i] > threshold ? 255 : 0;
+      data[i * 4] = value;
+      data[i * 4 + 1] = value;
+      data[i * 4 + 2] = value;
+    }
+  };
+
+  const bilateralFilter = (data, width, height) => {
+    const filtered = new Uint8ClampedArray(data.length);
+    const kernelSize = 5;
+    const sigma = 50;
+    const spatialSigma = 1.5;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let weightSum = 0;
+        let valueSum = 0;
+        const centerIdx = y * width + x;
+        const centerValue = data[centerIdx];
+
+        for (let ky = -kernelSize; ky <= kernelSize; ky++) {
+          for (let kx = -kernelSize; kx <= kernelSize; kx++) {
+            const ny = Math.min(Math.max(y + ky, 0), height - 1);
+            const nx = Math.min(Math.max(x + kx, 0), width - 1);
+            const idx = ny * width + nx;
+            const value = data[idx];
+
+            const spatialDistance = Math.sqrt(kx * kx + ky * ky);
+            const intensityDistance = Math.abs(value - centerValue);
+
+            const spatialWeight = Math.exp(-(spatialDistance * spatialDistance) / (2 * spatialSigma * spatialSigma));
+            const intensityWeight = Math.exp(-(intensityDistance * intensityDistance) / (2 * sigma * sigma));
+            const weight = spatialWeight * intensityWeight;
+
+            weightSum += weight;
+            valueSum += value * weight;
+          }
+        }
+
+        filtered[centerIdx] = Math.round(valueSum / weightSum);
+      }
+    }
+
+    return filtered;
+  };
+
+  const calculateOtsuThreshold = (data) => {
+    const histogram = new Array(256).fill(0);
+    const total = data.length;
+
+    for (let i = 0; i < data.length; i++) {
+      histogram[data[i]]++;
+    }
+
+    let sum = 0;
+    for (let i = 0; i < 256; i++) {
+      sum += i * histogram[i];
+    }
+
+    let sumB = 0;
+    let wB = 0;
+    let maxVariance = 0;
+    let threshold = 0;
+
+    for (let i = 0; i < 256; i++) {
+      wB += histogram[i];
+      if (wB === 0) continue;
+
+      const wF = total - wB;
+      if (wF === 0) break;
+
+      sumB += i * histogram[i];
+      const mB = sumB / wB;
+      const mF = (sum - sumB) / wF;
+
+      const variance = wB * wF * (mB - mF) * (mB - mF);
+      if (variance > maxVariance) {
+        maxVariance = variance;
+        threshold = i;
+      }
+    }
+
+    return threshold;
+  };
+
+  const morphologicalOps = (data, width, height, threshold) => {
+    // Erosion followed by dilation
+    const eroded = new Uint8ClampedArray(data.length);
+    const dilated = new Uint8ClampedArray(data.length);
+
+    const kernel = 3;
+
+    // Erosion
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        let minVal = 255;
+
+        for (let ky = -kernel; ky <= kernel; ky++) {
+          for (let kx = -kernel; kx <= kernel; kx++) {
+            const ny = Math.min(Math.max(y + ky, 0), height - 1);
+            const nx = Math.min(Math.max(x + kx, 0), width - 1);
+            const nidx = ny * width + nx;
+            minVal = Math.min(minVal, data[nidx] > threshold ? 255 : 0);
+          }
+        }
+        eroded[idx] = minVal;
+      }
+    }
+
+    // Dilation
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        let maxVal = 0;
+
+        for (let ky = -kernel; ky <= kernel; ky++) {
+          for (let kx = -kernel; kx <= kernel; kx++) {
+            const ny = Math.min(Math.max(y + ky, 0), height - 1);
+            const nx = Math.min(Math.max(x + kx, 0), width - 1);
+            const nidx = ny * width + nx;
+            maxVal = Math.max(maxVal, eroded[nidx]);
+          }
+        }
+        dilated[idx] = maxVal;
+      }
+    }
+
+    return dilated;
+  };
+
+  const removeGlare = (data, width, height) => {
+    const deglared = new Uint8ClampedArray(data);
+    const glareThreshold = 240;
+    const kernel = 7;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+
+        if (data[idx] > glareThreshold) {
+          let neighborSum = 0;
+          let neighborCount = 0;
+
+          for (let ky = -kernel; ky <= kernel; ky++) {
+            for (let kx = -kernel; kx <= kernel; kx++) {
+              if (kx === 0 && ky === 0) continue;
+
+              const ny = Math.min(Math.max(y + ky, 0), height - 1);
+              const nx = Math.min(Math.max(x + kx, 0), width - 1);
+              const nidx = ny * width + nx;
+
+              if (data[nidx] <= glareThreshold) {
+                neighborSum += data[nidx];
+                neighborCount++;
+              }
+            }
+          }
+
+          if (neighborCount > 0) {
+            deglared[idx] = Math.round(neighborSum / neighborCount);
+          }
+        }
+      }
+    }
+
+    return deglared;
   };
 
   useEffect(() => {
@@ -298,9 +538,9 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
         const quaggaReady = await initializeQuagga();
 
         if (quaggaReady) {
-          setStatus('✨ Multi-format scanner ready - Barcode, QR, OCR');
+          setStatus('✨ Advanced scanner ready - All formats + AI enhancement');
         } else {
-          setStatus('✨ Scanner ready - QR & OCR mode');
+          setStatus('✨ Advanced scanner ready - QR & multi-region OCR');
         }
 
         setTimeout(() => {
