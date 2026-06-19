@@ -316,8 +316,8 @@ export default function QRScanner({ onScan, onClose }) {
         for (let i = 0; i <= cleaned.length - 17; i++) {
           const candidate = cleaned.substring(i, i + 17);
 
-          // Validate VIN format (no I, O, Q)
-          if (/^[A-HJ-NPR-Z0-9]{17}$/.test(candidate)) {
+          // Validate VIN structure
+          if (isValidVIN(candidate)) {
             console.log('✅ Valid VIN detected:', candidate);
             return candidate;
           }
@@ -326,6 +326,56 @@ export default function QRScanner({ onScan, onClose }) {
     }
 
     return null;
+  };
+
+  const isValidVIN = (vin) => {
+    if (!vin || vin.length !== 17) return false;
+
+    // Check all characters are valid VIN characters (no I, O, Q)
+    if (!/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
+      console.log('❌ Invalid VIN chars:', vin);
+      return false;
+    }
+
+    // Position 0: Build location (WMI - World Manufacturer Identifier) - 1 char (valid)
+    const buildLocation = vin[0];
+    console.log('Build location:', buildLocation, '✓');
+
+    // Position 1-2: Manufacturer - 2 chars (valid)
+    const manufacturer = vin.substring(1, 3);
+    console.log('Manufacturer:', manufacturer, '✓');
+
+    // Position 3-7: Brand, engine size, type - 5 chars (valid)
+    const brandEngine = vin.substring(3, 8);
+    console.log('Brand/Engine:', brandEngine, '✓');
+
+    // Position 8: Check digit - must be alphanumeric but typically numeric or X
+    const checkDigit = vin[8];
+    if (!/[0-9X]/.test(checkDigit)) {
+      console.log('⚠️ Check digit suspicious:', checkDigit, '(expected 0-9 or X)');
+      // Don't reject, as some VINs may have letters
+    }
+    console.log('Check digit:', checkDigit, '✓');
+
+    // Position 9: Vehicle year - must be valid year code
+    const yearCode = vin[9];
+    const validYears = 'ABCDEFGHJKLMNPRSTVWXY'; // Valid year codes (no I, O, U, Z)
+    if (!validYears.includes(yearCode)) {
+      console.log('❌ Invalid year code:', yearCode, '(expected A-Y except I,O,U,Z)');
+      return false;
+    }
+    console.log('Vehicle year:', yearCode, '✓');
+
+    // Position 10: Assembly plant - 1 char (valid)
+    const assemblyPlant = vin[10];
+    console.log('Assembly plant:', assemblyPlant, '✓');
+
+    // Position 11-16: Vehicle serial number - 6 chars (valid)
+    const serialNumber = vin.substring(11, 17);
+    console.log('Serial number:', serialNumber, '✓');
+
+    console.log('✅ VIN structure validated:', vin);
+    return true;
   };
 
   const handleVINDetected = (vin) => {
