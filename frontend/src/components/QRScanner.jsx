@@ -498,7 +498,7 @@ export default function QRScanner({ onScan, onClose }) {
         }}
       />
 
-      {/* Overlay */}
+      {/* Dark Vignette Overlay - Makes edges very dark */}
       <div
         style={{
           position: 'absolute',
@@ -506,52 +506,110 @@ export default function QRScanner({ onScan, onClose }) {
           left: 0,
           right: 0,
           bottom: 0,
-          backgroundColor: 'rgba(0, 0, 0, 0.3)',
-          zIndex: 2
+          background: `
+            radial-gradient(
+              ellipse 80% 60% at 50% 50%,
+              rgba(0, 0, 0, 0) 0%,
+              rgba(0, 0, 0, 0.4) 40%,
+              rgba(0, 0, 0, 0.8) 70%,
+              rgba(0, 0, 0, 0.95) 100%
+            )
+          `,
+          zIndex: 2,
+          pointerEvents: 'none'
         }}
       />
 
-      {/* Scanning Frame */}
+      {/* Scanning Frame - VIN Label Style */}
       <div
         style={{
           position: 'absolute',
           top: '50%',
           left: '50%',
           transform: 'translate(-50%, -50%)',
-          width: '85%',
-          aspectRatio: '4/1',
-          border: '4px solid #FFD700',
-          borderRadius: '12px',
-          boxShadow: 'inset 0 0 30px rgba(255, 215, 0, 0.2), 0 0 30px rgba(255, 215, 0, 0.5)',
+          width: '88%',
+          maxWidth: '600px',
+          aspectRatio: '5/1.8',
+          backgroundColor: 'rgba(240, 240, 240, 0.95)',
+          border: '3px solid #333',
+          borderRadius: '8px',
+          boxShadow: '0 15px 50px rgba(0, 0, 0, 0.8), inset 0 1px 3px rgba(255, 255, 255, 0.5)',
           zIndex: 3,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          pointerEvents: 'none'
+          pointerEvents: 'none',
+          padding: '20px'
         }}
       >
+        {/* Scanning Indicator Circle */}
         <div
           style={{
-            width: '80px',
-            height: '80px',
+            width: '90px',
+            height: '90px',
             borderRadius: '50%',
-            backgroundColor: isProcessing ? 'rgba(255, 107, 107, 0.9)' : 'rgba(255, 165, 0, 0.7)',
-            boxShadow: `0 0 40px ${isProcessing ? '#FF6B6B' : '#FFB800'}`,
+            backgroundColor: isProcessing ? 'rgba(220, 38, 38, 0.15)' : 'rgba(59, 130, 246, 0.1)',
+            border: `3px solid ${isProcessing ? '#DC2626' : '#3B82F6'}`,
+            boxShadow: isProcessing
+              ? `0 0 30px rgba(220, 38, 38, 0.5)`
+              : `0 0 20px rgba(59, 130, 246, 0.3)`,
             animation: isProcessing ? 'pulse 0.8s ease-in-out' : 'pulse 2s ease-in-out infinite',
-            border: '3px solid rgba(255, 215, 0, 0.9)',
             display: 'flex',
             alignItems: 'center',
-            justifyContent: 'center'
+            justifyContent: 'center',
+            position: 'relative'
           }}
         >
           <div
             style={{
-              width: '40px',
-              height: '40px',
+              width: '50px',
+              height: '50px',
               borderRadius: '50%',
-              backgroundColor: isProcessing ? '#FF6B6B' : '#FFB800'
+              backgroundColor: isProcessing ? '#DC2626' : '#3B82F6',
+              opacity: isProcessing ? 0.9 : 0.6
             }}
           />
+          {/* Corner marks to match VIN label */}
+          <div style={{
+            position: 'absolute',
+            top: '-15px',
+            left: '-15px',
+            width: '25px',
+            height: '25px',
+            border: '2px solid #666',
+            borderRight: 'none',
+            borderBottom: 'none'
+          }} />
+          <div style={{
+            position: 'absolute',
+            top: '-15px',
+            right: '-15px',
+            width: '25px',
+            height: '25px',
+            border: '2px solid #666',
+            borderLeft: 'none',
+            borderBottom: 'none'
+          }} />
+          <div style={{
+            position: 'absolute',
+            bottom: '-15px',
+            left: '-15px',
+            width: '25px',
+            height: '25px',
+            border: '2px solid #666',
+            borderRight: 'none',
+            borderTop: 'none'
+          }} />
+          <div style={{
+            position: 'absolute',
+            bottom: '-15px',
+            right: '-15px',
+            width: '25px',
+            height: '25px',
+            border: '2px solid #666',
+            borderLeft: 'none',
+            borderTop: 'none'
+          }} />
         </div>
       </div>
 
@@ -560,19 +618,24 @@ export default function QRScanner({ onScan, onClose }) {
         <div
           style={{
             position: 'absolute',
-            top: '15%',
+            top: '20%',
             left: '50%',
             transform: 'translateX(-50%)',
-            color: '#FFD700',
-            fontSize: '24px',
-            fontWeight: '700',
-            letterSpacing: '3px',
+            color: '#fff',
+            fontSize: '28px',
+            fontWeight: '800',
+            letterSpacing: '2px',
             whiteSpace: 'nowrap',
-            textShadow: '0 2px 10px rgba(0, 0, 0, 0.9)',
-            zIndex: 4
+            textShadow: '0 3px 15px rgba(0, 0, 0, 0.95)',
+            zIndex: 4,
+            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+            padding: '12px 24px',
+            borderRadius: '8px',
+            border: '2px solid rgba(59, 130, 246, 0.5)',
+            animation: 'glow 1.5s ease-in-out'
           }}
         >
-          {detectedVIN}
+          ✓ {detectedVIN}
         </div>
       )}
 
@@ -580,15 +643,16 @@ export default function QRScanner({ onScan, onClose }) {
       <div
         style={{
           position: 'absolute',
-          bottom: '200px',
+          top: '30px',
           left: '50%',
           transform: 'translateX(-50%)',
           textAlign: 'center',
-          color: 'white',
-          fontSize: '16px',
-          fontWeight: '500',
-          textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)',
-          zIndex: 3
+          color: '#fff',
+          fontSize: '18px',
+          fontWeight: '600',
+          textShadow: '0 2px 10px rgba(0, 0, 0, 0.9)',
+          zIndex: 3,
+          letterSpacing: '0.5px'
         }}
       >
         {status}
@@ -598,34 +662,36 @@ export default function QRScanner({ onScan, onClose }) {
       <div
         style={{
           position: 'absolute',
-          bottom: '80px',
+          bottom: '60px',
           left: '50%',
           transform: 'translateX(-50%)',
-          backgroundColor: 'rgba(0, 0, 0, 0.85)',
-          padding: '16px 20px',
-          borderRadius: '12px',
-          border: '2px solid #FFD700',
+          backgroundColor: 'rgba(20, 20, 20, 0.92)',
+          padding: '18px 24px',
+          borderRadius: '10px',
+          border: '2px solid rgba(255, 255, 255, 0.3)',
+          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.8)',
           zIndex: 3,
-          width: '80%',
-          maxWidth: '450px'
+          width: '88%',
+          maxWidth: '500px'
         }}
       >
         <label
           style={{
             display: 'block',
-            color: '#FFD700',
-            fontSize: '12px',
-            fontWeight: '700',
-            marginBottom: '8px',
-            textAlign: 'center'
+            color: '#fff',
+            fontSize: '13px',
+            fontWeight: '600',
+            marginBottom: '10px',
+            textAlign: 'center',
+            letterSpacing: '0.5px'
           }}
         >
-          📝 Type VIN (No OCR match?)
+          📝 Can't detect? Type VIN manually
         </label>
-        <div style={{ display: 'flex', gap: '8px' }}>
+        <div style={{ display: 'flex', gap: '10px' }}>
           <input
             type="text"
-            placeholder="Enter VIN"
+            placeholder="Enter 17-character VIN"
             value={manualVIN}
             onChange={(e) => {
               const val = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
@@ -640,45 +706,69 @@ export default function QRScanner({ onScan, onClose }) {
             maxLength="17"
             style={{
               flex: 1,
-              padding: '10px 12px',
-              border: '2px solid #FFD700',
+              padding: '12px 14px',
+              border: '2px solid rgba(255, 255, 255, 0.2)',
               borderRadius: '6px',
               fontSize: '14px',
               fontFamily: 'monospace',
               fontWeight: '600',
               letterSpacing: '1px',
-              backgroundColor: 'rgba(255, 255, 255, 0.1)',
-              color: 'white'
+              backgroundColor: 'rgba(255, 255, 255, 0.08)',
+              color: '#fff',
+              transition: 'all 0.3s',
+              outline: 'none'
+            }}
+            onFocus={(e) => {
+              e.target.style.borderColor = 'rgba(255, 255, 255, 0.5)';
+              e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.12)';
+            }}
+            onBlur={(e) => {
+              e.target.style.borderColor = 'rgba(255, 255, 255, 0.2)';
+              e.target.style.backgroundColor = 'rgba(255, 255, 255, 0.08)';
             }}
           />
           <button
             onClick={handleManualVINSubmit}
             disabled={manualVIN.length !== 17}
             style={{
-              padding: '10px 14px',
-              backgroundColor: manualVIN.length === 17 ? '#FFD700' : 'rgba(255, 215, 0, 0.3)',
-              color: manualVIN.length === 17 ? '#000' : '#666',
+              padding: '12px 18px',
+              backgroundColor: manualVIN.length === 17 ? '#3B82F6' : 'rgba(59, 130, 246, 0.3)',
+              color: '#fff',
               border: 'none',
               borderRadius: '6px',
               fontWeight: '700',
               cursor: manualVIN.length === 17 ? 'pointer' : 'not-allowed',
-              fontSize: '12px',
-              whiteSpace: 'nowrap'
+              fontSize: '13px',
+              whiteSpace: 'nowrap',
+              transition: 'all 0.3s',
+              boxShadow: manualVIN.length === 17 ? '0 4px 15px rgba(59, 130, 246, 0.4)' : 'none'
+            }}
+            onMouseEnter={(e) => {
+              if (manualVIN.length === 17) {
+                e.target.style.backgroundColor = '#2563EB';
+                e.target.style.transform = 'translateY(-2px)';
+              }
+            }}
+            onMouseLeave={(e) => {
+              if (manualVIN.length === 17) {
+                e.target.style.backgroundColor = '#3B82F6';
+                e.target.style.transform = 'translateY(0)';
+              }
             }}
           >
-            Go
+            Submit
           </button>
         </div>
         <p
           style={{
-            fontSize: '11px',
-            color: '#FFD700',
-            marginTop: '6px',
+            fontSize: '12px',
+            color: 'rgba(255, 255, 255, 0.6)',
+            marginTop: '8px',
             marginBottom: 0,
             textAlign: 'center'
           }}
         >
-          {manualVIN.length}/17
+          {manualVIN.length}/17 characters
         </p>
       </div>
 
@@ -692,15 +782,15 @@ export default function QRScanner({ onScan, onClose }) {
         }}
         style={{
           position: 'absolute',
-          top: '30px',
-          right: '30px',
-          width: '56px',
-          height: '56px',
+          top: '25px',
+          right: '25px',
+          width: '52px',
+          height: '52px',
           borderRadius: '50%',
-          backgroundColor: 'rgba(0, 0, 0, 0.7)',
-          border: '2px solid rgba(255, 255, 255, 0.6)',
+          backgroundColor: 'rgba(30, 30, 30, 0.8)',
+          border: '2px solid rgba(255, 255, 255, 0.4)',
           color: 'white',
-          fontSize: '28px',
+          fontSize: '26px',
           fontWeight: 'bold',
           cursor: 'pointer',
           display: 'flex',
@@ -710,17 +800,20 @@ export default function QRScanner({ onScan, onClose }) {
           zIndex: 4,
           padding: 0,
           lineHeight: '1',
-          outline: 'none'
+          outline: 'none',
+          boxShadow: '0 4px 15px rgba(0, 0, 0, 0.6)'
         }}
         onMouseEnter={(e) => {
-          e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
-          e.target.style.borderColor = 'rgba(255, 255, 255, 0.9)';
-          e.target.style.boxShadow = '0 0 20px rgba(255, 255, 255, 0.3)';
+          e.target.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
+          e.target.style.borderColor = 'rgba(255, 255, 255, 0.8)';
+          e.target.style.boxShadow = '0 6px 20px rgba(255, 255, 255, 0.2)';
+          e.target.style.transform = 'scale(1.1)';
         }}
         onMouseLeave={(e) => {
-          e.target.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
-          e.target.style.borderColor = 'rgba(255, 255, 255, 0.6)';
-          e.target.style.boxShadow = 'none';
+          e.target.style.backgroundColor = 'rgba(30, 30, 30, 0.8)';
+          e.target.style.borderColor = 'rgba(255, 255, 255, 0.4)';
+          e.target.style.boxShadow = '0 4px 15px rgba(0, 0, 0, 0.6)';
+          e.target.style.transform = 'scale(1)';
         }}
       >
         ✕
@@ -759,6 +852,20 @@ export default function QRScanner({ onScan, onClose }) {
           50% {
             opacity: 1;
             transform: scale(1.15);
+          }
+        }
+
+        @keyframes glow {
+          0% {
+            opacity: 0;
+            transform: translateX(-50%) scale(0.9);
+          }
+          50% {
+            box-shadow: 0 0 30px rgba(59, 130, 246, 0.8);
+          }
+          100% {
+            opacity: 1;
+            transform: translateX(-50%) scale(1);
           }
         }
       `}</style>
