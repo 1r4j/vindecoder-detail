@@ -66,19 +66,76 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
 
   const validateVIN = (vin) => {
     if (!vin || typeof vin !== 'string') return false;
+
     const cleaned = vin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    // Must be exactly 17 characters
     if (cleaned.length !== 17) return false;
-    return /^[A-HJ-NPR-Z0-9]{17}$/.test(cleaned);
+
+    // Must not contain I, O, Q
+    if (/[IOQ]/.test(cleaned)) return false;
+
+    // Position 10 (year code) must be valid
+    const yearCode = cleaned[9];
+    const validYears = 'ABCDEFGHJKLMNPRSTVWXY'; // Valid year codes (no I, O, U, Z)
+    if (!validYears.includes(yearCode)) return false;
+
+    // Position 9 (check digit) validation using VIN check digit algorithm
+    if (!validateCheckDigit(cleaned)) return false;
+
+    // First 3 characters should be manufacturer code (alphanumeric)
+    if (!/^[A-HJ-NPR-Z0-9]{3}/.test(cleaned)) return false;
+
+    // Characters 4-8 should be vehicle descriptor section
+    if (!/[A-HJ-NPR-Z0-9]{5}$/.test(cleaned.substring(3, 8))) return false;
+
+    return true;
+  };
+
+  const validateCheckDigit = (vin) => {
+    // VIN check digit algorithm (position 9)
+    const translationTable = {
+      'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8,
+      'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 5, 'P': 7, 'R': 9,
+      'S': 2, 'T': 3, 'U': 4, 'V': 5, 'W': 6, 'X': 7, 'Y': 8, 'Z': 9,
+      '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9
+    };
+
+    const weights = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
+
+    let sum = 0;
+    for (let i = 0; i < 17; i++) {
+      if (i === 8) continue; // Skip check digit position
+
+      const char = vin[i];
+      const value = translationTable[char];
+
+      if (value === undefined) return false;
+
+      sum += value * weights[i];
+    }
+
+    const checkDigit = sum % 11;
+    const expectedCheckDigit = checkDigit === 10 ? 'X' : checkDigit.toString();
+    const actualCheckDigit = vin[8];
+
+    return actualCheckDigit === expectedCheckDigit;
   };
 
   const handleVINDetected = (vin, method) => {
     const cleaned = vin.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-    if (validateVIN(cleaned) && !detectedVINsRef.current.has(cleaned)) {
+    if (validateVIN(cleaned)) {
+      if (detectedVINsRef.current.has(cleaned)) {
+        console.log(`⚠️ VIN already detected: ${cleaned}`);
+        return;
+      }
+
       detectedVINsRef.current.add(cleaned);
+      console.log(`✅ Valid VIN confirmed: ${cleaned} via ${method}`);
       setDetectedVIN(cleaned);
       setDetectionMethod(method);
-      setStatus(`✅ VIN detected via ${method}!`);
+      setStatus(`✅ Valid VIN detected via ${method}!`);
       scanningRef.current = false;
 
       setTimeout(() => {
@@ -87,6 +144,9 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
           onScan(cleaned);
         }, 100);
       }, 800);
+    } else {
+      console.log(`❌ Invalid VIN rejected: ${cleaned} via ${method}`);
+      setStatus(`⚠️ Invalid VIN format detected via ${method}. Please adjust position.`);
     }
   };
 
@@ -210,18 +270,28 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
 
           const result = await ocrWorkerRef.current.recognize(croppedCanvas);
 
-          if (result.data.text && result.data.confidence > 0.3) {
-            // Try to find 17-character VIN
-            const vinMatch = result.data.text.match(/[A-HJ-NPR-Z0-9]{17}/);
-            if (vinMatch) {
-              handleVINDetected(vinMatch[0], `OCR Text (${region.name})`);
-              return; // Stop scanning other regions once found
+          if (result.data.text && result.data.confidence > 0.5) {
+            // Extract all potential 17-character sequences
+            const text = result.data.text.replace(/\s+/g, '').toUpperCase();
+            const potentialVINs = text.match(/[A-Z0-9]{17}/g) || [];
+
+            for (const potentialVIN of potentialVINs) {
+              if (validateVIN(potentialVIN)) {
+                console.log(`✅ Valid VIN found in ${region.name}: ${potentialVIN} (confidence: ${(result.data.confidence * 100).toFixed(1)}%)`);
+                handleVINDetected(potentialVIN, `OCR Text (${region.name})`);
+                return; // Stop scanning other regions once valid VIN found
+              } else {
+                console.log(`❌ Invalid VIN rejected in ${region.name}: ${potentialVIN}`);
+              }
             }
 
-            // Also look for partial VINs that might be obstructed
-            const partialVIN = result.data.text.match(/[A-HJ-NPR-Z0-9]{12,16}/);
-            if (partialVIN && result.data.confidence > 0.6) {
-              console.log(`Partial VIN detected in ${region.name}: ${partialVIN[0]}`);
+            // Also look for partial VINs that might be obstructed (12+ chars)
+            const partialMatches = text.match(/[A-Z0-9]{12,16}/g) || [];
+            for (const partial of partialMatches) {
+              // Only log if it looks promising (has valid year position)
+              if (partial.length >= 16 && result.data.confidence > 0.7) {
+                console.log(`ℹ️ Partial VIN in ${region.name}: ${partial} (${partial.length} chars, confidence: ${(result.data.confidence * 100).toFixed(1)}%)`);
+              }
             }
           }
         } catch (err) {
