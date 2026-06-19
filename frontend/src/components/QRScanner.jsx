@@ -176,7 +176,7 @@ export default function QRScanner({ onScan, onClose }) {
           top: '40px',
           left: '40px',
           color: 'white',
-          fontSize: clamp('14px', '3vw', '18px'),
+          fontSize: '18px',
           fontWeight: '700',
           letterSpacing: '0.5px'
         }}>
@@ -287,31 +287,31 @@ export default function QRScanner({ onScan, onClose }) {
             </div>
           </div>
 
-          {/* VIN Display */}
-          {detectedVIN && (
-            <div style={{
-              position: 'absolute',
-              top: '-40px',
-              left: '50%',
-              transform: 'translateX(-50%)',
-              color: '#FFD700',
-              fontSize: '18px',
-              fontWeight: '700',
-              letterSpacing: '2px',
-              whiteSpace: 'nowrap',
-              textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)',
-              zIndex: 11
-            }}>
-              {detectedVIN}
-            </div>
-          )}
+        {/* VIN Display */}
+        {detectedVIN && (
+          <div style={{
+            position: 'absolute',
+            top: '-50px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            color: '#FFD700',
+            fontSize: '16px',
+            fontWeight: '700',
+            letterSpacing: '2px',
+            whiteSpace: 'nowrap',
+            textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)',
+            zIndex: 11
+          }}>
+            {detectedVIN}
+          </div>
+        )}
         </div>
 
         {/* Instructions */}
         <div style={{
           textAlign: 'center',
           color: 'white',
-          fontSize: clamp('12px', '2vw', '14px'),
+          fontSize: '14px',
           fontWeight: '500',
           letterSpacing: '0.3px',
           marginBottom: '20px',
@@ -321,7 +321,7 @@ export default function QRScanner({ onScan, onClose }) {
           <p style={{ marginBottom: '8px' }}>
             {isProcessing ? '⏳ Processing VIN...' : '📱 Tap to finish focusing'}
           </p>
-          <p style={{ fontSize: clamp('11px', '1.8vw', '13px'), opacity: 0.8 }}>
+          <p style={{ fontSize: '13px', opacity: 0.8 }}>
             Place the VIN barcode in the yellow frame
           </p>
         </div>
@@ -331,7 +331,7 @@ export default function QRScanner({ onScan, onClose }) {
           onClick={handleSkip}
           style={{
             padding: '12px 32px',
-            fontSize: clamp('13px', '2vw', '14px'),
+            fontSize: '14px',
             fontWeight: '600',
             backgroundColor: 'rgba(255, 255, 255, 0.1)',
             color: 'white',
