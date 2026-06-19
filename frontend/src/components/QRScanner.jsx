@@ -13,6 +13,7 @@ export default function QRScanner({ onScan, onClose }) {
   const ocrRef = useRef(null);
   const lastScanRef = useRef(0);
   const onCloseRef = useRef(onClose);
+  const processingRef = useRef(false);
 
   // Update ref when onClose changes
   useEffect(() => {
@@ -190,15 +191,24 @@ export default function QRScanner({ onScan, onClose }) {
     };
   }, []);
 
-  const scanFrames = async () => {
-    if (!scanningRef.current || !videoRef.current || !canvasRef.current) return;
-
-    const now = Date.now();
-    // Scan every 500ms to avoid CPU overload
-    if (now - lastScanRef.current < 500) {
-      requestAnimationFrame(scanFrames);
+  const scanFrames = () => {
+    if (!scanningRef.current || !videoRef.current || !canvasRef.current) {
       return;
     }
+
+    const now = Date.now();
+    // Scan every 1000ms to avoid blocking UI
+    if (now - lastScanRef.current < 1000) {
+      setTimeout(scanFrames, 100);
+      return;
+    }
+
+    // Skip if already processing
+    if (processingRef.current) {
+      setTimeout(scanFrames, 100);
+      return;
+    }
+
     lastScanRef.current = now;
 
     try {
@@ -213,63 +223,79 @@ export default function QRScanner({ onScan, onClose }) {
       // Draw video frame
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Convert to blob for OCR
-      canvas.toBlob(async (blob) => {
-        if (!blob || !scanningRef.current) return;
-
-        try {
-          setIsProcessing(true);
-          setStatus('🔍 Analyzing image...');
-
-          // Run OCR
-          if (ocrRef.current) {
-            const result = await ocrRef.current.recognize(blob);
-            const text = result.data.text;
-
-            if (text) {
-              console.log('OCR result:', text);
-
-              // Extract VIN from text
-              const vin = extractVINFromText(text);
-
-              if (vin) {
-                console.log('✅ VIN detected:', vin);
-                setDetectedVIN(vin);
-                setIsProcessing(false);
-                setStatus('✅ VIN detected!');
-                scanningRef.current = false;
-
-                // Stop scanning and close after delay
-                setTimeout(() => {
-                  if (streamRef.current) {
-                    streamRef.current.getTracks().forEach(track => track.stop());
-                  }
-                  if (ocrRef.current) {
-                    ocrRef.current.terminate();
-                  }
-                  if (screen.orientation) {
-                    screen.orientation.unlock().catch(() => {});
-                  }
-                  onScan(vin);
-                }, 800);
-                return;
-              }
-            }
-          }
-
-          setIsProcessing(false);
-          setStatus('📱 Point camera at VIN');
-        } catch (err) {
-          console.error('OCR error:', err);
-          setIsProcessing(false);
-          setStatus('📱 Point camera at VIN');
-        }
-      });
-
-      requestAnimationFrame(scanFrames);
+      // Process image asynchronously
+      processFrame(canvas);
     } catch (err) {
       console.error('Frame scan error:', err);
-      requestAnimationFrame(scanFrames);
+    }
+
+    setTimeout(scanFrames, 100);
+  };
+
+  const processFrame = async (canvas) => {
+    if (!scanningRef.current || !ocrRef.current) return;
+
+    processingRef.current = true;
+    setIsProcessing(true);
+    setStatus('🔍 Analyzing...');
+
+    try {
+      // Convert canvas to blob with low quality to reduce processing time
+      const blob = await new Promise((resolve) => {
+        canvas.toBlob(
+          (blob) => resolve(blob),
+          'image/jpeg',
+          0.7 // Lower quality = faster processing
+        );
+      });
+
+      if (!blob || !scanningRef.current) {
+        processingRef.current = false;
+        return;
+      }
+
+      // Run OCR
+      const result = await ocrRef.current.recognize(blob);
+      const text = result.data.text;
+
+      if (text) {
+        console.log('OCR result:', text);
+
+        // Extract VIN from text
+        const vin = extractVINFromText(text);
+
+        if (vin) {
+          console.log('✅ VIN detected:', vin);
+          setDetectedVIN(vin);
+          setStatus('✅ VIN detected!');
+          scanningRef.current = false;
+
+          // Stop scanning and close after delay
+          setTimeout(() => {
+            processingRef.current = false;
+            if (streamRef.current) {
+              streamRef.current.getTracks().forEach(track => track.stop());
+            }
+            if (ocrRef.current) {
+              ocrRef.current.terminate();
+            }
+            if (screen.orientation) {
+              screen.orientation.unlock().catch(() => {});
+            }
+            onScan(vin);
+          }, 800);
+          return;
+        }
+      }
+
+      setIsProcessing(false);
+      setStatus('📱 Point camera at VIN');
+    } catch (err) {
+      console.error('OCR error:', err);
+      setIsProcessing(false);
+      setStatus('📱 Point camera at VIN');
+    } finally {
+      processingRef.current = false;
     }
   };
 
