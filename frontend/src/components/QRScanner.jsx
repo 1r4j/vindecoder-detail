@@ -267,39 +267,55 @@ export default function QRScanner({ onScan, onClose }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Get image data and apply preprocessing
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      preprocessImage(imageData);
-      ctx.putImageData(imageData, 0, 0);
+      // Crop to VIN area (VINs typically appear in the middle section of sticker)
+      const cropTop = Math.floor(canvas.height * 0.35);
+      const cropHeight = Math.floor(canvas.height * 0.3);
+      const cropLeft = Math.floor(canvas.width * 0.1);
+      const cropWidth = Math.floor(canvas.width * 0.8);
 
-      // Convert to blob and run OCR
-      canvas.toBlob(async (blob) => {
+      const croppedImageData = ctx.getImageData(cropLeft, cropTop, cropWidth, cropHeight);
+
+      // Apply preprocessing to cropped area
+      preprocessImage(croppedImageData);
+
+      // Put back the preprocessed data
+      ctx.putImageData(croppedImageData, cropLeft, cropTop);
+
+      // Create a new canvas with only the cropped VIN area
+      const croppedCanvas = document.createElement('canvas');
+      croppedCanvas.width = cropWidth;
+      croppedCanvas.height = cropHeight;
+      const croppedCtx = croppedCanvas.getContext('2d');
+      croppedCtx.drawImage(canvas, cropLeft, cropTop, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+
+      // Convert to blob and run OCR on cropped image
+      croppedCanvas.toBlob(async (blob) => {
         if (!blob || !scanningRef.current || !ocrWorkerRef.current) return;
 
         try {
-          setStatus('🔍 Scanning text...');
+          setStatus('🔍 Scanning VIN...');
           const result = await ocrWorkerRef.current.recognize(blob, 'eng', {
             tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789'
           });
 
           const text = result.data.text;
-          console.log('📝 Raw OCR text:', JSON.stringify(text));
+          console.log('📝 OCR text from VIN area:', JSON.stringify(text));
 
           if (text) {
             const vin = extractVINFromText(text);
 
             if (vin && !detectedVINsRef.current.has(vin)) {
               detectedVINsRef.current.add(vin);
-              console.log('✅ VIN from OCR:', vin);
+              console.log('✅ Valid VIN detected:', vin);
               handleVINDetected(vin);
               return;
             }
           }
 
-          setStatus('🎯 Align VIN text/barcode with frame');
+          setStatus('🎯 Align VIN with frame');
         } catch (err) {
           console.error('OCR error:', err);
-          setStatus('🎯 Align VIN text/barcode with frame');
+          setStatus('🎯 Align VIN with frame');
         }
       }, 'image/png');
 
