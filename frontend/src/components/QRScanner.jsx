@@ -245,9 +245,9 @@ export default function QRScanner({ onScan, onClose }) {
     if (!scanningRef.current || !videoRef.current || !canvasRef.current) return;
 
     const now = Date.now();
-    // OCR every 2 seconds to avoid CPU overload
-    if (now - lastScanRef.current < 2000) {
-      setTimeout(scanWithOCR, 500);
+    // OCR every 1.5 seconds
+    if (now - lastScanRef.current < 1500) {
+      setTimeout(scanWithOCR, 300);
       return;
     }
 
@@ -258,7 +258,7 @@ export default function QRScanner({ onScan, onClose }) {
       const video = document.querySelector('#scanner-video video');
 
       if (!video || video.readyState !== 2) {
-        setTimeout(scanWithOCR, 500);
+        setTimeout(scanWithOCR, 300);
         return;
       }
 
@@ -267,17 +267,25 @@ export default function QRScanner({ onScan, onClose }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
+      // Get image data and apply preprocessing
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      preprocessImage(imageData);
+      ctx.putImageData(imageData, 0, 0);
+
       // Convert to blob and run OCR
       canvas.toBlob(async (blob) => {
         if (!blob || !scanningRef.current || !ocrWorkerRef.current) return;
 
         try {
           setStatus('🔍 Scanning text...');
-          const result = await ocrWorkerRef.current.recognize(blob);
+          const result = await ocrWorkerRef.current.recognize(blob, 'eng', {
+            tessedit_char_whitelist: 'ABCDEFGHJKLMNPRSTUVWXYZ0123456789'
+          });
+
           const text = result.data.text;
+          console.log('📝 Raw OCR text:', JSON.stringify(text));
 
           if (text) {
-            console.log('📝 OCR result:', text);
             const vin = extractVINFromText(text);
 
             if (vin && !detectedVINsRef.current.has(vin)) {
@@ -293,12 +301,36 @@ export default function QRScanner({ onScan, onClose }) {
           console.error('OCR error:', err);
           setStatus('🎯 Align VIN text/barcode with frame');
         }
-      }, 'image/jpeg', 0.8);
+      }, 'image/png');
 
-      setTimeout(scanWithOCR, 500);
+      setTimeout(scanWithOCR, 300);
     } catch (err) {
       console.error('Scan error:', err);
-      setTimeout(scanWithOCR, 500);
+      setTimeout(scanWithOCR, 300);
+    }
+  };
+
+  const preprocessImage = (imageData) => {
+    const data = imageData.data;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+
+      // Convert to grayscale
+      const gray = r * 0.299 + g * 0.587 + b * 0.114;
+
+      // Apply contrast enhancement
+      const contrast = 1.5;
+      const adjusted = (gray - 128) * contrast + 128;
+
+      // Clamp values
+      const value = Math.max(0, Math.min(255, adjusted));
+
+      data[i] = value;
+      data[i + 1] = value;
+      data[i + 2] = value;
     }
   };
 
@@ -339,19 +371,35 @@ export default function QRScanner({ onScan, onClose }) {
   const extractVINFromText = (text) => {
     if (!text) return null;
 
-    const cleaned = text.toUpperCase().replace(/\s+/g, ' ').trim();
-    console.log('Cleaned OCR text:', cleaned);
+    // Remove extra whitespace and convert to uppercase
+    const cleaned = text.toUpperCase().replace(/\s+/g, '').trim();
+    console.log('Cleaned text (no spaces):', cleaned);
 
-    // Look for 17-character VIN pattern
+    // Look for consecutive 17-character VIN patterns
     const vinPattern = /[A-HJ-NPR-Z0-9]{17}/g;
     const matches = cleaned.match(vinPattern);
 
+    console.log('Found VIN candidates:', matches);
+
     if (matches && matches.length > 0) {
       for (const match of matches) {
+        // Validate VIN format
         if (/^[A-HJ-NPR-Z0-9]{17}$/.test(match)) {
-          console.log('Valid VIN found:', match);
+          console.log('✅ Valid VIN extracted:', match);
           return match;
         }
+      }
+    }
+
+    // Also try with original spacing removed but more relaxed
+    const relaxedPattern = /[A-HJ-NPR-Z0-9]{17,}/;
+    const relaxedMatch = cleaned.match(relaxedPattern);
+
+    if (relaxedMatch) {
+      const candidate = relaxedMatch[0].substring(0, 17);
+      if (/^[A-HJ-NPR-Z0-9]{17}$/.test(candidate)) {
+        console.log('✅ Valid VIN from relaxed pattern:', candidate);
+        return candidate;
       }
     }
 
