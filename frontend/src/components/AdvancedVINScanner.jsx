@@ -65,35 +65,57 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
   };
 
   const validateVIN = (vin) => {
-    if (!vin || typeof vin !== 'string') return false;
+    if (!vin || typeof vin !== 'string') {
+      console.log('VIN validation failed: not a string');
+      return false;
+    }
 
     const cleaned = vin.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
     // Must be exactly 17 characters
-    if (cleaned.length !== 17) return false;
+    if (cleaned.length !== 17) {
+      console.log(`VIN validation failed: length is ${cleaned.length}, expected 17`);
+      return false;
+    }
 
     // Must not contain I, O, Q
-    if (/[IOQ]/.test(cleaned)) return false;
+    if (/[IOQ]/.test(cleaned)) {
+      console.log(`VIN validation failed: contains forbidden characters I, O, or Q`);
+      return false;
+    }
 
-    // Position 10 (year code) must be valid
+    // Position 10 (year code, 0-indexed position 9) must be valid
     const yearCode = cleaned[9];
     const validYears = 'ABCDEFGHJKLMNPRSTVWXY'; // Valid year codes (no I, O, U, Z)
-    if (!validYears.includes(yearCode)) return false;
+    if (!validYears.includes(yearCode)) {
+      console.log(`VIN validation failed: invalid year code '${yearCode}' at position 10`);
+      return false;
+    }
 
-    // Position 9 (check digit) validation using VIN check digit algorithm
-    if (!validateCheckDigit(cleaned)) return false;
+    // Position 9 (check digit, 0-indexed position 8) validation using VIN check digit algorithm
+    if (!validateCheckDigit(cleaned)) {
+      console.log(`VIN validation failed: check digit validation failed`);
+      return false;
+    }
 
-    // First 3 characters should be manufacturer code (alphanumeric)
-    if (!/^[A-HJ-NPR-Z0-9]{3}/.test(cleaned)) return false;
+    // First 3 characters should be manufacturer code (alphanumeric, no I/O/Q)
+    if (!/^[A-Z0-9]{3}/.test(cleaned)) {
+      console.log(`VIN validation failed: invalid manufacturer code '${cleaned.substring(0, 3)}'`);
+      return false;
+    }
 
-    // Characters 4-8 should be vehicle descriptor section
-    if (!/[A-HJ-NPR-Z0-9]{5}$/.test(cleaned.substring(3, 8))) return false;
+    // Characters 4-8 (positions 3-7, 5 chars) should be vehicle descriptor section
+    const descriptor = cleaned.substring(3, 8);
+    if (!/^[A-Z0-9]{5}$/.test(descriptor)) {
+      console.log(`VIN validation failed: invalid descriptor section '${descriptor}'`);
+      return false;
+    }
 
     return true;
   };
 
   const validateCheckDigit = (vin) => {
-    // VIN check digit algorithm (position 9)
+    // VIN check digit algorithm (position 8, 0-indexed)
     const translationTable = {
       'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5, 'F': 6, 'G': 7, 'H': 8,
       'J': 1, 'K': 2, 'L': 3, 'M': 4, 'N': 5, 'P': 7, 'R': 9,
@@ -101,6 +123,7 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
       '0': 0, '1': 1, '2': 2, '3': 3, '4': 4, '5': 5, '6': 6, '7': 7, '8': 8, '9': 9
     };
 
+    // Weights for each position (position 8 has weight 0 and is skipped)
     const weights = [8, 7, 6, 5, 4, 3, 2, 10, 0, 9, 8, 7, 6, 5, 4, 3, 2];
 
     let sum = 0;
@@ -110,7 +133,10 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
       const char = vin[i];
       const value = translationTable[char];
 
-      if (value === undefined) return false;
+      if (value === undefined) {
+        console.log(`Invalid character at position ${i}: '${char}'`);
+        return false;
+      }
 
       sum += value * weights[i];
     }
@@ -119,11 +145,18 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
     const expectedCheckDigit = checkDigit === 10 ? 'X' : checkDigit.toString();
     const actualCheckDigit = vin[8];
 
-    return actualCheckDigit === expectedCheckDigit;
+    const isValid = actualCheckDigit === expectedCheckDigit;
+    if (!isValid) {
+      console.log(`Check digit mismatch: expected '${expectedCheckDigit}', got '${actualCheckDigit}' (sum=${sum}, mod=${checkDigit})`);
+    }
+
+    return isValid;
   };
 
   const handleVINDetected = (vin, method) => {
     const cleaned = vin.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+    console.log(`🔍 Testing VIN: '${cleaned}' from ${method}`);
 
     if (validateVIN(cleaned)) {
       if (detectedVINsRef.current.has(cleaned)) {
@@ -145,7 +178,7 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
         }, 100);
       }, 800);
     } else {
-      console.log(`❌ Invalid VIN rejected: ${cleaned} via ${method}`);
+      console.log(`❌ Invalid VIN rejected: '${cleaned}' via ${method}`);
       setStatus(`⚠️ Invalid VIN format detected via ${method}. Please adjust position.`);
     }
   };
