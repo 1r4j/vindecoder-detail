@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import jsQR from 'jsqr';
+import Tesseract from 'tesseract.js';
 
 export default function QRScanner({ onScan, onClose }) {
   const videoRef = useRef(null);
@@ -7,8 +7,11 @@ export default function QRScanner({ onScan, onClose }) {
   const [error, setError] = useState('');
   const [detectedVIN, setDetectedVIN] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [status, setStatus] = useState('Initializing OCR...');
   const streamRef = useRef(null);
   const scanningRef = useRef(true);
+  const ocrRef = useRef(null);
+  const lastScanRef = useRef(0);
   const onCloseRef = useRef(onClose);
 
   // Update ref when onClose changes
@@ -16,55 +19,45 @@ export default function QRScanner({ onScan, onClose }) {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Define handleClose outside useEffect
+  // Define handleClose
   const handleClose = () => {
     console.log('Closing scanner...');
-
-    // Stop scanning
     scanningRef.current = false;
 
-    // Stop camera stream
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
         track.stop();
-        console.log('Camera track stopped');
       });
       streamRef.current = null;
     }
 
-    // Unlock orientation
     if (screen.orientation) {
       try {
-        screen.orientation.unlock();
-        console.log('Orientation unlocked');
+        const unlockPromise = screen.orientation.unlock();
+        if (unlockPromise && typeof unlockPromise.catch === 'function') {
+          unlockPromise.catch(() => {});
+        }
       } catch (err) {
-        console.warn('Could not unlock orientation:', err);
+        console.warn('Unlock orientation error:', err);
       }
     }
 
-    // Exit fullscreen
     if (document.fullscreenElement) {
       try {
         const exitPromise = document.exitFullscreen();
         if (exitPromise && typeof exitPromise.catch === 'function') {
-          exitPromise.catch((err) => {
-            console.warn('Fullscreen exit error (non-critical):', err.message);
-          });
+          exitPromise.catch(() => {});
         }
-        console.log('Fullscreen exit initiated');
       } catch (err) {
-        console.warn('Could not exit fullscreen:', err);
+        console.warn('Exit fullscreen error:', err);
       }
     }
 
-    // Restore body styles
     document.body.style.overflow = 'auto';
     document.body.style.position = 'relative';
     document.body.style.width = 'auto';
     document.documentElement.style.overflow = 'auto';
 
-    // Call parent close handler
-    console.log('Calling onClose');
     setTimeout(() => {
       onCloseRef.current();
     }, 100);
@@ -77,33 +70,38 @@ export default function QRScanner({ onScan, onClose }) {
     document.body.style.width = '100%';
     document.documentElement.style.overflow = 'hidden';
 
-    // Handle ESC key to close scanner
+    // Handle ESC key
     const handleKeyPress = (e) => {
       if (e.key === 'Escape') {
-        console.log('ESC pressed - closing scanner');
         handleClose();
       }
     };
 
     document.addEventListener('keydown', handleKeyPress);
 
-    const startScanning = async () => {
+    const initializeScanner = async () => {
       try {
         setError('');
+        setStatus('Initializing OCR engine...');
 
-        // Lock orientation to landscape
+        // Initialize Tesseract
+        const { createWorker } = Tesseract;
+        const worker = await createWorker();
+        ocrRef.current = worker;
+        setStatus('OCR ready, requesting camera...');
+
+        // Lock orientation
         if (screen.orientation) {
           try {
             await screen.orientation.lock('landscape-primary').catch(() => {
               return screen.orientation.lock('landscape');
             });
-            console.log('✅ Locked to landscape');
           } catch (err) {
-            console.warn('Orientation lock not available:', err);
+            console.warn('Orientation lock failed:', err);
           }
         }
 
-        // Request fullscreen if available (non-blocking)
+        // Request fullscreen
         const scannerContainer = document.getElementById('scanner-fullscreen');
         if (scannerContainer && scannerContainer.requestFullscreen) {
           try {
@@ -115,9 +113,7 @@ export default function QRScanner({ onScan, onClose }) {
           }
         }
 
-        console.log('📱 Requesting camera...');
-
-        // Request back camera
+        // Request camera
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'environment',
@@ -127,7 +123,6 @@ export default function QRScanner({ onScan, onClose }) {
           audio: false
         });
 
-        console.log('✅ Camera granted');
         streamRef.current = stream;
 
         if (!videoRef.current) return;
@@ -137,8 +132,11 @@ export default function QRScanner({ onScan, onClose }) {
         videoRef.current.setAttribute('autoplay', 'true');
         videoRef.current.setAttribute('muted', 'true');
 
+        setStatus('📱 Point camera at VIN');
+
+        // Start scanning frames
         setTimeout(() => {
-          scanQRCodes();
+          scanFrames();
         }, 500);
       } catch (err) {
         console.error('Error:', err);
@@ -147,35 +145,30 @@ export default function QRScanner({ onScan, onClose }) {
         } else if (err.name === 'NotFoundError') {
           setError('No camera found');
         } else {
-          setError('Camera error: ' + err.message);
+          setError('Error: ' + err.message);
         }
       }
     };
 
-    startScanning();
+    initializeScanner();
 
     return () => {
       scanningRef.current = false;
-
-      // Remove keyboard listener
       document.removeEventListener('keydown', handleKeyPress);
 
-      // Restore body
       document.body.style.overflow = 'auto';
       document.body.style.position = 'relative';
       document.body.style.width = 'auto';
       document.documentElement.style.overflow = 'auto';
 
-      // Unlock orientation
       if (screen.orientation) {
         try {
-          screen.orientation.unlock();
+          screen.orientation.unlock().catch(() => {});
         } catch (err) {
-          console.warn('Could not unlock:', err);
+          console.warn('Unlock error:', err);
         }
       }
 
-      // Exit fullscreen (non-blocking)
       if (document.fullscreenElement) {
         try {
           const exitPromise = document.exitFullscreen();
@@ -187,70 +180,116 @@ export default function QRScanner({ onScan, onClose }) {
         }
       }
 
-      // Stop camera
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
+      }
+
+      if (ocrRef.current) {
+        ocrRef.current.terminate();
       }
     };
   }, []);
 
-  const scanQRCodes = () => {
+  const scanFrames = async () => {
     if (!scanningRef.current || !videoRef.current || !canvasRef.current) return;
 
-    const canvas = canvasRef.current;
-    const video = videoRef.current;
-    const ctx = canvas.getContext('2d');
-
-    canvas.width = video.videoWidth || 1920;
-    canvas.height = video.videoHeight || 1080;
-
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const now = Date.now();
+    // Scan every 500ms to avoid CPU overload
+    if (now - lastScanRef.current < 500) {
+      requestAnimationFrame(scanFrames);
+      return;
+    }
+    lastScanRef.current = now;
 
     try {
-      const code = jsQR(imageData.data, imageData.width, imageData.height);
-      if (code) {
-        const vin = extractVIN(code.data);
-        if (vin) {
-          setIsProcessing(true);
-          setDetectedVIN(vin);
-          console.log('✅ VIN detected:', vin);
-          scanningRef.current = false;
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+      const ctx = canvas.getContext('2d');
 
-          setTimeout(() => {
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            if (screen.orientation) {
-              try {
-                const unlockPromise = screen.orientation.unlock();
-                if (unlockPromise && typeof unlockPromise.catch === 'function') {
-                  unlockPromise.catch(() => {});
-                }
-              } catch (err) {
-                console.warn('Unlock orientation error:', err);
+      // Set canvas size
+      canvas.width = video.videoWidth || 1920;
+      canvas.height = video.videoHeight || 1080;
+
+      // Draw video frame
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Convert to blob for OCR
+      canvas.toBlob(async (blob) => {
+        if (!blob || !scanningRef.current) return;
+
+        try {
+          setIsProcessing(true);
+          setStatus('🔍 Analyzing image...');
+
+          // Run OCR
+          if (ocrRef.current) {
+            const result = await ocrRef.current.recognize(blob);
+            const text = result.data.text;
+
+            if (text) {
+              console.log('OCR result:', text);
+
+              // Extract VIN from text
+              const vin = extractVINFromText(text);
+
+              if (vin) {
+                console.log('✅ VIN detected:', vin);
+                setDetectedVIN(vin);
+                setIsProcessing(false);
+                setStatus('✅ VIN detected!');
+                scanningRef.current = false;
+
+                // Stop scanning and close after delay
+                setTimeout(() => {
+                  if (streamRef.current) {
+                    streamRef.current.getTracks().forEach(track => track.stop());
+                  }
+                  if (ocrRef.current) {
+                    ocrRef.current.terminate();
+                  }
+                  if (screen.orientation) {
+                    screen.orientation.unlock().catch(() => {});
+                  }
+                  onScan(vin);
+                }, 800);
+                return;
               }
             }
-            onScan(vin);
-          }, 600);
-          return;
-        }
-      }
-    } catch (err) {
-      // Continue scanning
-    }
+          }
 
-    requestAnimationFrame(scanQRCodes);
+          setIsProcessing(false);
+          setStatus('📱 Point camera at VIN');
+        } catch (err) {
+          console.error('OCR error:', err);
+          setIsProcessing(false);
+          setStatus('📱 Point camera at VIN');
+        }
+      });
+
+      requestAnimationFrame(scanFrames);
+    } catch (err) {
+      console.error('Frame scan error:', err);
+      requestAnimationFrame(scanFrames);
+    }
   };
 
-  const extractVIN = (text) => {
-    const cleaned = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
-    if (cleaned.length >= 17) {
-      const vin = cleaned.substring(0, 17);
-      if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
-        return vin;
+  const extractVINFromText = (text) => {
+    // Remove whitespace and line breaks
+    const cleaned = text.replace(/\s+/g, '').toUpperCase();
+
+    // Look for 17-character VIN patterns
+    const vinRegex = /[A-HJ-NPR-Z0-9]{17}/g;
+    const matches = cleaned.match(vinRegex);
+
+    if (matches) {
+      for (const match of matches) {
+        // Verify it looks like a valid VIN
+        if (/^[A-HJ-NPR-Z0-9]{17}$/.test(match)) {
+          return match;
+        }
       }
     }
+
     return null;
   };
 
@@ -277,7 +316,7 @@ export default function QRScanner({ onScan, onClose }) {
         overflow: 'hidden'
       }}
     >
-      {/* Video Stream - Full Background */}
+      {/* Video Stream */}
       <video
         ref={videoRef}
         style={{
@@ -297,7 +336,7 @@ export default function QRScanner({ onScan, onClose }) {
       {/* Hidden Canvas */}
       <canvas ref={canvasRef} style={{ display: 'none' }} />
 
-      {/* Overlay - Dark tint */}
+      {/* Overlay */}
       <div
         style={{
           position: 'absolute',
@@ -375,7 +414,7 @@ export default function QRScanner({ onScan, onClose }) {
         </div>
       )}
 
-      {/* Instructions */}
+      {/* Status Text */}
       <div
         style={{
           position: 'absolute',
@@ -387,19 +426,19 @@ export default function QRScanner({ onScan, onClose }) {
           fontSize: '16px',
           fontWeight: '500',
           textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)',
-          zIndex: 3
+          zIndex: 3,
+          animation: status.includes('Analyzing') ? 'pulse 1s infinite' : 'none'
         }}
       >
-        <p>{isProcessing ? '⏳ Processing...' : '📱 Align VIN with frame'}</p>
+        {status}
       </div>
 
-      {/* Close Button - Top Right */}
+      {/* Close Button */}
       <button
         type="button"
         onClick={(e) => {
           e.preventDefault();
           e.stopPropagation();
-          console.log('Close button clicked');
           handleClose();
         }}
         style={{
