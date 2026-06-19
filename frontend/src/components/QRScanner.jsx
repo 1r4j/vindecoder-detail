@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import Tesseract from 'tesseract.js';
 import Quagga from '@ericblade/quagga2';
 
 export default function QRScanner({ onScan, onClose }) {
@@ -7,21 +8,22 @@ export default function QRScanner({ onScan, onClose }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [status, setStatus] = useState('📱 Initializing camera...');
   const streamRef = useRef(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
   const scanningRef = useRef(true);
   const onCloseRef = useRef(onClose);
+  const ocrWorkerRef = useRef(null);
   const detectedVINsRef = useRef(new Set());
+  const lastScanRef = useRef(0);
 
-  // Update ref when onClose changes
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Define handleClose
   const handleClose = () => {
     console.log('Closing scanner...');
     scanningRef.current = false;
 
-    // Stop Quagga
     try {
       Quagga.stop();
       Quagga.offDetected();
@@ -34,6 +36,10 @@ export default function QRScanner({ onScan, onClose }) {
         track.stop();
       });
       streamRef.current = null;
+    }
+
+    if (ocrWorkerRef.current) {
+      ocrWorkerRef.current.terminate();
     }
 
     if (screen.orientation) {
@@ -69,13 +75,11 @@ export default function QRScanner({ onScan, onClose }) {
   };
 
   useEffect(() => {
-    // Hide body scrolling and lock viewport
     document.body.style.overflow = 'hidden';
     document.body.style.position = 'fixed';
     document.body.style.width = '100%';
     document.documentElement.style.overflow = 'hidden';
 
-    // Handle ESC key
     const handleKeyPress = (e) => {
       if (e.key === 'Escape') {
         handleClose();
@@ -87,7 +91,12 @@ export default function QRScanner({ onScan, onClose }) {
     const initializeScanner = async () => {
       try {
         setError('');
-        setStatus('📱 Requesting camera...');
+        setStatus('🔍 Initializing OCR + Barcode scanner...');
+
+        // Initialize OCR worker
+        const { createWorker } = Tesseract;
+        const worker = await createWorker();
+        ocrWorkerRef.current = worker;
 
         // Lock orientation
         if (screen.orientation) {
@@ -95,7 +104,6 @@ export default function QRScanner({ onScan, onClose }) {
             await screen.orientation.lock('landscape-primary').catch(() => {
               return screen.orientation.lock('landscape');
             });
-            console.log('✅ Locked to landscape');
           } catch (err) {
             console.warn('Orientation lock failed:', err);
           }
@@ -113,16 +121,16 @@ export default function QRScanner({ onScan, onClose }) {
           }
         }
 
-        // Initialize Quagga
-        setStatus('🔍 Initializing barcode scanner...');
+        // Initialize Quagga for barcode detection
+        setStatus('📱 Initializing barcode detection...');
 
         await Quagga.init(
           {
             inputStream: {
               type: 'LiveStream',
               constraints: {
-                width: { ideal: 1280 },
-                height: { ideal: 720 },
+                width: { ideal: 1920 },
+                height: { ideal: 1080 },
                 facingMode: 'environment'
               },
               target: document.querySelector('#scanner-video')
@@ -130,82 +138,50 @@ export default function QRScanner({ onScan, onClose }) {
             decoder: {
               readers: [
                 'code_128_reader',
-                'ean_reader',
-                'ean_8_reader',
-                'upc_reader',
-                'upc_e_reader',
-                'codabar_reader',
                 'code_39_reader',
                 'code_39_vin_reader',
-                'i2of5_reader'
+                'ean_reader',
+                'ean_8_reader',
+                'upc_reader'
               ],
-              debug: {
-                showCanvas: false,
-                showPatternOverlay: false,
-                showFrequency: false,
-                showSkeleton: false
-              }
+              debug: { showCanvas: false, showPatternOverlay: false }
             },
             locator: {
-              halfSample: true,
-              patchSize: 'medium'
+              halfSample: false,
+              patchSize: 'large'
             },
             numOfWorkers: 1,
-            frequency: 10
+            frequency: 15
           },
           (err) => {
             if (err) {
               console.error('Quagga init error:', err);
-              setError('Failed to initialize barcode scanner');
               return;
             }
-            console.log('✅ Quagga initialized');
             Quagga.start();
-            setStatus('🎯 Align barcode with frame');
+            setStatus('🎯 Align VIN text/barcode with frame');
           }
         );
 
         // Handle barcode detection
         Quagga.onDetected((result) => {
-          if (!scanningRef.current) return;
+          if (!scanningRef.current || !result.codeResult) return;
 
           const code = result.codeResult.code;
           console.log('📸 Barcode detected:', code);
 
-          if (code) {
-            const vin = extractVIN(code);
-
-            if (vin && !detectedVINsRef.current.has(vin)) {
-              detectedVINsRef.current.add(vin);
-              console.log('✅ VIN detected:', vin);
-              setDetectedVIN(vin);
-              setIsProcessing(true);
-              setStatus('✅ VIN detected!');
-              scanningRef.current = false;
-
-              // Stop scanning
-              try {
-                Quagga.stop();
-              } catch (err) {
-                console.warn('Quagga stop error:', err);
-              }
-
-              // Close after delay
-              setTimeout(() => {
-                handleClose();
-                setTimeout(() => {
-                  onScan(vin);
-                }, 100);
-              }, 800);
-            }
+          const vin = extractVIN(code);
+          if (vin && !detectedVINsRef.current.has(vin)) {
+            detectedVINsRef.current.add(vin);
+            console.log('✅ VIN from barcode:', vin);
+            handleVINDetected(vin);
           }
         });
 
-        // Get stream reference
-        const videoElement = document.querySelector('#scanner-video video');
-        if (videoElement && videoElement.srcObject) {
-          streamRef.current = videoElement.srcObject;
-        }
+        // Start OCR scanning
+        setTimeout(() => {
+          scanWithOCR();
+        }, 1000);
       } catch (err) {
         console.error('Error:', err);
         if (err.name === 'NotAllowedError') {
@@ -240,6 +216,10 @@ export default function QRScanner({ onScan, onClose }) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
 
+      if (ocrWorkerRef.current) {
+        ocrWorkerRef.current.terminate();
+      }
+
       if (screen.orientation) {
         try {
           screen.orientation.unlock().catch(() => {});
@@ -261,15 +241,117 @@ export default function QRScanner({ onScan, onClose }) {
     };
   }, []);
 
+  const scanWithOCR = async () => {
+    if (!scanningRef.current || !videoRef.current || !canvasRef.current) return;
+
+    const now = Date.now();
+    // OCR every 2 seconds to avoid CPU overload
+    if (now - lastScanRef.current < 2000) {
+      setTimeout(scanWithOCR, 500);
+      return;
+    }
+
+    lastScanRef.current = now;
+
+    try {
+      const canvas = canvasRef.current;
+      const video = document.querySelector('#scanner-video video');
+
+      if (!video || video.readyState !== 2) {
+        setTimeout(scanWithOCR, 500);
+        return;
+      }
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      // Convert to blob and run OCR
+      canvas.toBlob(async (blob) => {
+        if (!blob || !scanningRef.current || !ocrWorkerRef.current) return;
+
+        try {
+          setStatus('🔍 Scanning text...');
+          const result = await ocrWorkerRef.current.recognize(blob);
+          const text = result.data.text;
+
+          if (text) {
+            console.log('📝 OCR result:', text);
+            const vin = extractVINFromText(text);
+
+            if (vin && !detectedVINsRef.current.has(vin)) {
+              detectedVINsRef.current.add(vin);
+              console.log('✅ VIN from OCR:', vin);
+              handleVINDetected(vin);
+              return;
+            }
+          }
+
+          setStatus('🎯 Align VIN text/barcode with frame');
+        } catch (err) {
+          console.error('OCR error:', err);
+          setStatus('🎯 Align VIN text/barcode with frame');
+        }
+      }, 'image/jpeg', 0.8);
+
+      setTimeout(scanWithOCR, 500);
+    } catch (err) {
+      console.error('Scan error:', err);
+      setTimeout(scanWithOCR, 500);
+    }
+  };
+
+  const handleVINDetected = (vin) => {
+    setDetectedVIN(vin);
+    setIsProcessing(true);
+    setStatus('✅ VIN detected!');
+    scanningRef.current = false;
+
+    try {
+      Quagga.stop();
+    } catch (err) {
+      console.warn('Quagga stop error:', err);
+    }
+
+    setTimeout(() => {
+      handleClose();
+      setTimeout(() => {
+        onScan(vin);
+      }, 100);
+    }, 800);
+  };
+
   const extractVIN = (text) => {
-    // Clean up the text
+    if (!text) return null;
     const cleaned = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-    // Look for 17-character VIN pattern
     if (cleaned.length >= 17) {
       const vin = cleaned.substring(0, 17);
       if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
         return vin;
+      }
+    }
+
+    return null;
+  };
+
+  const extractVINFromText = (text) => {
+    if (!text) return null;
+
+    const cleaned = text.toUpperCase().replace(/\s+/g, ' ').trim();
+    console.log('Cleaned OCR text:', cleaned);
+
+    // Look for 17-character VIN pattern
+    const vinPattern = /[A-HJ-NPR-Z0-9]{17}/g;
+    const matches = cleaned.match(vinPattern);
+
+    if (matches && matches.length > 0) {
+      for (const match of matches) {
+        if (/^[A-HJ-NPR-Z0-9]{17}$/.test(match)) {
+          console.log('Valid VIN found:', match);
+          return match;
+        }
       }
     }
 
@@ -312,6 +394,27 @@ export default function QRScanner({ onScan, onClose }) {
         }}
       />
 
+      {/* Hidden Canvas for OCR */}
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: 'absolute',
+          display: 'none'
+        }}
+      />
+
+      {/* Hidden Video for OCR fallback */}
+      <video
+        ref={videoRef}
+        style={{
+          position: 'absolute',
+          display: 'none'
+        }}
+        autoPlay
+        playsInline
+        muted
+      />
+
       {/* Overlay */}
       <div
         style={{
@@ -344,7 +447,6 @@ export default function QRScanner({ onScan, onClose }) {
           pointerEvents: 'none'
         }}
       >
-        {/* Pulsing Detection Circle */}
         <div
           style={{
             width: '80px',
@@ -404,7 +506,7 @@ export default function QRScanner({ onScan, onClose }) {
           fontWeight: '500',
           textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)',
           zIndex: 3,
-          animation: status.includes('Initializing') ? 'pulse 1s infinite' : 'none'
+          animation: status.includes('Scanning') ? 'pulse 1s infinite' : 'none'
         }}
       >
         {status}
