@@ -5,7 +5,8 @@ import Quagga from '@ericblade/quagga2';
 
 export default function AdvancedVINScanner({ onScan, onClose }) {
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
-  const [status, setStatus] = useState('Initializing scanner...');
+  const [detectedVIN, setDetectedVIN] = useState('');
+  const [showDetectionModal, setShowDetectionModal] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -20,7 +21,6 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Handle orientation changes
   useEffect(() => {
     const handleOrientationChange = () => {
       const landscape = window.innerWidth > window.innerHeight;
@@ -75,6 +75,17 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
     setTimeout(() => {
       onCloseRef.current();
     }, 100);
+  };
+
+  const handleConfirmVIN = () => {
+    setShowDetectionModal(false);
+    scanningRef.current = false;
+    setTimeout(() => {
+      handleClose();
+      setTimeout(() => {
+        onScan(detectedVIN);
+      }, 100);
+    }, 500);
   };
 
   const validateVIN = (vin) => {
@@ -141,15 +152,9 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
 
       detectedVINsRef.current.add(cleaned);
       console.log(`✅ Valid VIN confirmed: ${cleaned} via ${method}`);
-      setStatus(`✅ VIN Detected: ${cleaned}`);
+      setDetectedVIN(cleaned);
+      setShowDetectionModal(true);
       scanningRef.current = false;
-
-      setTimeout(() => {
-        handleClose();
-        setTimeout(() => {
-          onScan(cleaned);
-        }, 100);
-      }, 800);
     } else {
       console.log(`❌ Invalid VIN rejected: '${cleaned}' via ${method}`);
     }
@@ -506,8 +511,6 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
 
     const initializeScanner = async () => {
       try {
-        setStatus('Requesting camera...');
-
         if (screen.orientation) {
           try {
             await screen.orientation.lock('landscape-primary').catch(() => {
@@ -536,8 +539,6 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
         videoRef.current.setAttribute('autoplay', 'true');
         videoRef.current.setAttribute('muted', 'true');
 
-        setStatus('Initializing scanner...');
-
         const { createWorker } = Tesseract;
         const worker = await createWorker('eng', 1, {
           corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v4/tesseract-core.wasm.js'
@@ -545,20 +546,12 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
         ocrWorkerRef.current = worker;
 
         await initializeQuagga();
-        setStatus('Ready to scan');
 
         setTimeout(() => {
           scanWithOCR();
         }, 1000);
       } catch (err) {
         console.error('Error:', err);
-        if (err.name === 'NotAllowedError') {
-          setStatus('Camera permission denied');
-        } else if (err.name === 'NotFoundError') {
-          setStatus('No camera found');
-        } else {
-          setStatus('Error: ' + err.message);
-        }
       }
     };
 
@@ -593,165 +586,64 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
   // Show portrait warning if not in landscape mode
   if (!isLandscape) {
     return (
-      <div
-        style={{
-          position: 'fixed',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          width: '100vw',
-          height: '100vh',
-          margin: 0,
-          padding: 0,
-          backgroundColor: '#000',
-          zIndex: 10000,
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          color: '#fff',
-          textAlign: 'center'
-        }}
-      >
+      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', backgroundColor: '#000', zIndex: 10000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff', textAlign: 'center' }}>
         <div style={{ fontSize: '72px', marginBottom: '20px' }}>📱</div>
         <h1 style={{ fontSize: '28px', marginBottom: '16px' }}>Rotate Your Phone</h1>
-        <p style={{ fontSize: '18px', marginBottom: '32px', maxWidth: '80%', opacity: 0.8 }}>
-          Please rotate your phone to landscape mode for scanning
-        </p>
-        <button
-          onClick={handleClose}
-          style={{
-            padding: '12px 24px',
-            fontSize: '16px',
-            backgroundColor: '#3B82F6',
-            color: 'white',
-            border: 'none',
-            borderRadius: '6px',
-            cursor: 'pointer'
-          }}
-        >
-          Close
-        </button>
+        <p style={{ fontSize: '18px', marginBottom: '32px', maxWidth: '80%', opacity: 0.8 }}>Please rotate your phone to landscape mode for scanning</p>
+        <button onClick={handleClose} style={{ padding: '12px 24px', fontSize: '16px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Close</button>
       </div>
     );
   }
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        top: 0,
-        left: 0,
-        right: 0,
-        bottom: 0,
-        width: '100vw',
-        height: '100vh',
-        margin: 0,
-        padding: 0,
-        backgroundColor: '#000',
-        zIndex: 10000,
-        overflow: 'hidden'
-      }}
-    >
-      {/* Video Feed */}
-      <video
-        ref={videoRef}
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          width: '100%',
-          height: '100%',
-          objectFit: 'cover',
-          zIndex: 1
-        }}
-        autoPlay
-        playsInline
-        muted
-      />
-
-      {/* Hidden Canvas for OCR */}
-      <canvas
-        ref={canvasRef}
-        style={{
-          position: 'absolute',
-          display: 'none'
-        }}
-      />
-
-      {/* Yellow Centering Line */}
-      <div
-        style={{
-          position: 'absolute',
-          top: '50%',
-          left: '50%',
-          transform: 'translate(-50%, -50%)',
-          width: '60%',
-          height: '2px',
-          backgroundColor: '#FFD700',
-          zIndex: 2,
-          boxShadow: '0 0 10px rgba(255, 215, 0, 0.6)'
-        }}
-      />
-
-      {/* Close Button */}
-      <button
-        onClick={handleClose}
-        style={{
-          position: 'absolute',
-          top: '16px',
-          right: '16px',
-          width: '48px',
-          height: '48px',
-          borderRadius: '50%',
-          backgroundColor: 'rgba(30, 30, 30, 0.9)',
-          border: '2px solid rgba(255, 255, 255, 0.6)',
-          color: '#fff',
-          fontSize: '24px',
-          fontWeight: 'bold',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          transition: 'all 0.2s',
-          zIndex: 3,
-          outline: 'none'
-        }}
-        onMouseEnter={(e) => {
-          e.target.style.backgroundColor = 'rgba(30, 30, 30, 0.95)';
-          e.target.style.borderColor = 'rgba(255, 255, 255, 0.9)';
-          e.target.style.transform = 'scale(1.1)';
-        }}
-        onMouseLeave={(e) => {
-          e.target.style.backgroundColor = 'rgba(30, 30, 30, 0.9)';
-          e.target.style.borderColor = 'rgba(255, 255, 255, 0.6)';
-          e.target.style.transform = 'scale(1)';
-        }}
-      >
-        ✕
-      </button>
-
-      {/* Status Text at Bottom */}
-      <div
-        style={{
-          position: 'absolute',
-          bottom: '24px',
-          left: '50%',
-          transform: 'translateX(-50%)',
-          color: '#fff',
-          fontSize: '14px',
-          fontWeight: '600',
-          textAlign: 'center',
-          zIndex: 2,
-          backgroundColor: 'rgba(0, 0, 0, 0.6)',
-          padding: '8px 16px',
-          borderRadius: '6px',
-          maxWidth: '80%'
-        }}
-      >
-        {status}
+    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', margin: 0, padding: 0, zIndex: 10000, display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}>
+      {/* Header */}
+      <div style={{ height: '60px', backgroundColor: 'white', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '16px', paddingRight: '16px' }}>
+        <button onClick={handleClose} style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: '16px', fontWeight: '600', cursor: 'pointer', padding: '8px 12px' }}>Cancel</button>
+        <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#1E293B' }}>VIN Scanner</h1>
+        <button style={{ background: 'none', border: 'none', color: '#64748B', fontSize: '20px', cursor: 'pointer', padding: '8px 12px' }}>⚙️</button>
       </div>
+
+      {/* Camera Feed */}
+      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+        <video ref={videoRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} autoPlay playsInline muted />
+
+        <canvas ref={canvasRef} style={{ position: 'absolute', display: 'none' }} />
+
+        {/* Yellow Centering Line */}
+        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '60%', height: '3px', backgroundColor: '#FFD700', zIndex: 2, boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)' }} />
+
+        {/* Text Indicator */}
+        <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', color: '#fff', fontSize: '14px', fontWeight: '600', textAlign: 'center', zIndex: 2, opacity: 0.8 }}>Scan the VIN</div>
+      </div>
+
+      {/* Detection Modal */}
+      {showDetectionModal && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)', zIndex: 10001, display: 'flex', alignItems: 'flex-end' }}>
+          <div style={{ width: '100%', backgroundColor: 'white', borderRadius: '16px 16px 0 0', padding: '32px 24px 24px', textAlign: 'center', animation: 'slideUp 0.3s ease-out' }}>
+            <p style={{ fontSize: '14px', color: '#64748B', margin: '0 0 12px 0', fontWeight: '500' }}>VIN detected</p>
+            <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1E293B', margin: '0 0 32px 0', letterSpacing: '1px' }}>{detectedVIN}</h2>
+
+            <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+              <button onClick={() => { setShowDetectionModal(false); scanningRef.current = true; setTimeout(() => scanWithOCR(), 500); }} style={{ flex: 1, padding: '12px 24px', backgroundColor: 'white', color: '#1E293B', border: '2px solid #CBD5E1', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={(e) => { e.target.style.borderColor = '#4F46E5'; e.target.style.color = '#4F46E5'; }} onMouseLeave={(e) => { e.target.style.borderColor = '#CBD5E1'; e.target.style.color = '#1E293B'; }}>Close</button>
+              <button onClick={handleConfirmVIN} style={{ flex: 1, padding: '12px 24px', background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={(e) => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 10px 15px rgba(239, 68, 68, 0.3)'; }} onMouseLeave={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = 'none'; }}>Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <style>{`
+        @keyframes slideUp {
+          from {
+            transform: translateY(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }
