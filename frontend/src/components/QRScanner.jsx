@@ -1,19 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import Tesseract from 'tesseract.js';
+import Quagga from '@ericblade/quagga2';
 
 export default function QRScanner({ onScan, onClose }) {
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
   const [error, setError] = useState('');
   const [detectedVIN, setDetectedVIN] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [status, setStatus] = useState('Initializing OCR...');
+  const [status, setStatus] = useState('📱 Initializing camera...');
   const streamRef = useRef(null);
   const scanningRef = useRef(true);
-  const ocrRef = useRef(null);
-  const lastScanRef = useRef(0);
   const onCloseRef = useRef(onClose);
-  const processingRef = useRef(false);
+  const detectedVINsRef = useRef(new Set());
 
   // Update ref when onClose changes
   useEffect(() => {
@@ -24,6 +20,14 @@ export default function QRScanner({ onScan, onClose }) {
   const handleClose = () => {
     console.log('Closing scanner...');
     scanningRef.current = false;
+
+    // Stop Quagga
+    try {
+      Quagga.stop();
+      Quagga.offDetected();
+    } catch (err) {
+      console.warn('Quagga stop error:', err);
+    }
 
     if (streamRef.current) {
       streamRef.current.getTracks().forEach(track => {
@@ -83,13 +87,7 @@ export default function QRScanner({ onScan, onClose }) {
     const initializeScanner = async () => {
       try {
         setError('');
-        setStatus('Initializing OCR engine...');
-
-        // Initialize Tesseract
-        const { createWorker } = Tesseract;
-        const worker = await createWorker();
-        ocrRef.current = worker;
-        setStatus('OCR ready, requesting camera...');
+        setStatus('📱 Requesting camera...');
 
         // Lock orientation
         if (screen.orientation) {
@@ -97,6 +95,7 @@ export default function QRScanner({ onScan, onClose }) {
             await screen.orientation.lock('landscape-primary').catch(() => {
               return screen.orientation.lock('landscape');
             });
+            console.log('✅ Locked to landscape');
           } catch (err) {
             console.warn('Orientation lock failed:', err);
           }
@@ -114,39 +113,107 @@ export default function QRScanner({ onScan, onClose }) {
           }
         }
 
-        // Request camera
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
+        // Initialize Quagga
+        setStatus('🔍 Initializing barcode scanner...');
+
+        await Quagga.init(
+          {
+            inputStream: {
+              type: 'LiveStream',
+              constraints: {
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                facingMode: 'environment'
+              },
+              target: document.querySelector('#scanner-video')
+            },
+            decoder: {
+              readers: [
+                'code_128_reader',
+                'ean_reader',
+                'ean_8_reader',
+                'upc_reader',
+                'upc_e_reader',
+                'codabar_reader',
+                'code_39_reader',
+                'code_39_vin_reader',
+                'i2of5_reader'
+              ],
+              debug: {
+                showCanvas: false,
+                showPatternOverlay: false,
+                showFrequency: false,
+                showSkeleton: false
+              }
+            },
+            locator: {
+              halfSample: true,
+              patchSize: 'medium'
+            },
+            numOfWorkers: 1,
+            frequency: 10
           },
-          audio: false
+          (err) => {
+            if (err) {
+              console.error('Quagga init error:', err);
+              setError('Failed to initialize barcode scanner');
+              return;
+            }
+            console.log('✅ Quagga initialized');
+            Quagga.start();
+            setStatus('🎯 Align barcode with frame');
+          }
+        );
+
+        // Handle barcode detection
+        Quagga.onDetected((result) => {
+          if (!scanningRef.current) return;
+
+          const code = result.codeResult.code;
+          console.log('📸 Barcode detected:', code);
+
+          if (code) {
+            const vin = extractVIN(code);
+
+            if (vin && !detectedVINsRef.current.has(vin)) {
+              detectedVINsRef.current.add(vin);
+              console.log('✅ VIN detected:', vin);
+              setDetectedVIN(vin);
+              setIsProcessing(true);
+              setStatus('✅ VIN detected!');
+              scanningRef.current = false;
+
+              // Stop scanning
+              try {
+                Quagga.stop();
+              } catch (err) {
+                console.warn('Quagga stop error:', err);
+              }
+
+              // Close after delay
+              setTimeout(() => {
+                handleClose();
+                setTimeout(() => {
+                  onScan(vin);
+                }, 100);
+              }, 800);
+            }
+          }
         });
 
-        streamRef.current = stream;
-
-        if (!videoRef.current) return;
-
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.setAttribute('autoplay', 'true');
-        videoRef.current.setAttribute('muted', 'true');
-
-        setStatus('📱 Point camera at VIN');
-
-        // Start scanning frames
-        setTimeout(() => {
-          scanFrames();
-        }, 500);
+        // Get stream reference
+        const videoElement = document.querySelector('#scanner-video video');
+        if (videoElement && videoElement.srcObject) {
+          streamRef.current = videoElement.srcObject;
+        }
       } catch (err) {
         console.error('Error:', err);
         if (err.name === 'NotAllowedError') {
-          setError('Camera permission denied');
+          setError('❌ Camera permission denied');
         } else if (err.name === 'NotFoundError') {
-          setError('No camera found');
+          setError('❌ No camera found');
         } else {
-          setError('Error: ' + err.message);
+          setError('❌ Error: ' + err.message);
         }
       }
     };
@@ -161,6 +228,17 @@ export default function QRScanner({ onScan, onClose }) {
       document.body.style.position = 'relative';
       document.body.style.width = 'auto';
       document.documentElement.style.overflow = 'auto';
+
+      try {
+        Quagga.stop();
+        Quagga.offDetected();
+      } catch (err) {
+        console.warn('Quagga cleanup error:', err);
+      }
+
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
 
       if (screen.orientation) {
         try {
@@ -180,139 +258,18 @@ export default function QRScanner({ onScan, onClose }) {
           console.warn('Exit fullscreen error:', err);
         }
       }
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-
-      if (ocrRef.current) {
-        ocrRef.current.terminate();
-      }
     };
   }, []);
 
-  const scanFrames = () => {
-    if (!scanningRef.current || !videoRef.current || !canvasRef.current) {
-      return;
-    }
+  const extractVIN = (text) => {
+    // Clean up the text
+    const cleaned = text.trim().toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-    const now = Date.now();
-    // Scan every 1000ms to avoid blocking UI
-    if (now - lastScanRef.current < 1000) {
-      setTimeout(scanFrames, 100);
-      return;
-    }
-
-    // Skip if already processing
-    if (processingRef.current) {
-      setTimeout(scanFrames, 100);
-      return;
-    }
-
-    lastScanRef.current = now;
-
-    try {
-      const canvas = canvasRef.current;
-      const video = videoRef.current;
-      const ctx = canvas.getContext('2d');
-
-      // Set canvas size
-      canvas.width = video.videoWidth || 1920;
-      canvas.height = video.videoHeight || 1080;
-
-      // Draw video frame
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-
-      // Process image asynchronously
-      processFrame(canvas);
-    } catch (err) {
-      console.error('Frame scan error:', err);
-    }
-
-    setTimeout(scanFrames, 100);
-  };
-
-  const processFrame = async (canvas) => {
-    if (!scanningRef.current || !ocrRef.current) return;
-
-    processingRef.current = true;
-    setIsProcessing(true);
-    setStatus('🔍 Analyzing...');
-
-    try {
-      // Convert canvas to blob with low quality to reduce processing time
-      const blob = await new Promise((resolve) => {
-        canvas.toBlob(
-          (blob) => resolve(blob),
-          'image/jpeg',
-          0.7 // Lower quality = faster processing
-        );
-      });
-
-      if (!blob || !scanningRef.current) {
-        processingRef.current = false;
-        return;
-      }
-
-      // Run OCR
-      const result = await ocrRef.current.recognize(blob);
-      const text = result.data.text;
-
-      if (text) {
-        console.log('OCR result:', text);
-
-        // Extract VIN from text
-        const vin = extractVINFromText(text);
-
-        if (vin) {
-          console.log('✅ VIN detected:', vin);
-          setDetectedVIN(vin);
-          setStatus('✅ VIN detected!');
-          scanningRef.current = false;
-
-          // Stop scanning and close after delay
-          setTimeout(() => {
-            processingRef.current = false;
-            if (streamRef.current) {
-              streamRef.current.getTracks().forEach(track => track.stop());
-            }
-            if (ocrRef.current) {
-              ocrRef.current.terminate();
-            }
-            if (screen.orientation) {
-              screen.orientation.unlock().catch(() => {});
-            }
-            onScan(vin);
-          }, 800);
-          return;
-        }
-      }
-
-      setIsProcessing(false);
-      setStatus('📱 Point camera at VIN');
-    } catch (err) {
-      console.error('OCR error:', err);
-      setIsProcessing(false);
-      setStatus('📱 Point camera at VIN');
-    } finally {
-      processingRef.current = false;
-    }
-  };
-
-  const extractVINFromText = (text) => {
-    // Remove whitespace and line breaks
-    const cleaned = text.replace(/\s+/g, '').toUpperCase();
-
-    // Look for 17-character VIN patterns
-    const vinRegex = /[A-HJ-NPR-Z0-9]{17}/g;
-    const matches = cleaned.match(vinRegex);
-
-    if (matches) {
-      for (const match of matches) {
-        // Verify it looks like a valid VIN
-        if (/^[A-HJ-NPR-Z0-9]{17}$/.test(match)) {
-          return match;
-        }
+    // Look for 17-character VIN pattern
+    if (cleaned.length >= 17) {
+      const vin = cleaned.substring(0, 17);
+      if (/^[A-HJ-NPR-Z0-9]{17}$/.test(vin)) {
+        return vin;
       }
     }
 
@@ -342,25 +299,18 @@ export default function QRScanner({ onScan, onClose }) {
         overflow: 'hidden'
       }}
     >
-      {/* Video Stream */}
-      <video
-        ref={videoRef}
+      {/* Quagga Video Container */}
+      <div
+        id="scanner-video"
         style={{
           position: 'absolute',
           top: 0,
           left: 0,
           width: '100%',
           height: '100%',
-          objectFit: 'cover',
           zIndex: 1
         }}
-        autoPlay
-        playsInline
-        muted
       />
-
-      {/* Hidden Canvas */}
-      <canvas ref={canvasRef} style={{ display: 'none' }} />
 
       {/* Overlay */}
       <div
@@ -390,7 +340,8 @@ export default function QRScanner({ onScan, onClose }) {
           zIndex: 3,
           display: 'flex',
           alignItems: 'center',
-          justifyContent: 'center'
+          justifyContent: 'center',
+          pointerEvents: 'none'
         }}
       >
         {/* Pulsing Detection Circle */}
@@ -453,7 +404,7 @@ export default function QRScanner({ onScan, onClose }) {
           fontWeight: '500',
           textShadow: '0 2px 8px rgba(0, 0, 0, 0.8)',
           zIndex: 3,
-          animation: status.includes('Analyzing') ? 'pulse 1s infinite' : 'none'
+          animation: status.includes('Initializing') ? 'pulse 1s infinite' : 'none'
         }}
       >
         {status}
@@ -537,6 +488,16 @@ export default function QRScanner({ onScan, onClose }) {
             opacity: 1;
             transform: scale(1.15);
           }
+        }
+
+        #scanner-video {
+          overflow: hidden;
+        }
+
+        #scanner-video canvas {
+          width: 100%;
+          height: 100%;
+          display: block;
         }
       `}</style>
     </div>
