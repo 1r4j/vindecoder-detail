@@ -9,6 +9,7 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
   const [status, setStatus] = useState('🔍 Initializing multi-format scanner...');
   const [manualVIN, setManualVIN] = useState('');
   const [detectionMethod, setDetectionMethod] = useState('');
+  const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -22,6 +23,23 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
   useEffect(() => {
     onCloseRef.current = onClose;
   }, [onClose]);
+
+  // Handle orientation changes
+  useEffect(() => {
+    const handleOrientationChange = () => {
+      const landscape = window.innerWidth > window.innerHeight;
+      setIsLandscape(landscape);
+      console.log(`Orientation changed: ${landscape ? 'landscape' : 'portrait'}`);
+    };
+
+    window.addEventListener('orientationchange', handleOrientationChange);
+    window.addEventListener('resize', handleOrientationChange);
+
+    return () => {
+      window.removeEventListener('orientationchange', handleOrientationChange);
+      window.removeEventListener('resize', handleOrientationChange);
+    };
+  }, []);
 
   const handleClose = () => {
     scanningRef.current = false;
@@ -588,6 +606,13 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
     const initializeScanner = async () => {
       try {
         setError('');
+
+        // Check orientation
+        if (!isLandscape) {
+          setStatus('📱 Please rotate your phone to landscape mode');
+          return;
+        }
+
         setStatus('🔍 Initializing OCR engine...');
 
         const { createWorker } = Tesseract;
@@ -708,6 +733,112 @@ export default function AdvancedVINScanner({ onScan, onClose }) {
       setError('⚠️ VIN must be 17 characters (no I, O, Q)');
     }
   };
+
+  // Show portrait warning if not in landscape mode
+  if (!isLandscape) {
+    return (
+      <div
+        id="scanner-fullscreen"
+        style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          width: '100vw',
+          height: '100vh',
+          margin: 0,
+          padding: 0,
+          border: 0,
+          backgroundColor: '#000000',
+          zIndex: 10000,
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          overflow: 'hidden'
+        }}
+      >
+        {/* Portrait Mode Warning */}
+        <div
+          style={{
+            textAlign: 'center',
+            color: '#fff',
+            zIndex: 10001
+          }}
+        >
+          <div
+            style={{
+              fontSize: '72px',
+              marginBottom: '24px',
+              animation: 'pulse 2s ease-in-out infinite'
+            }}
+          >
+            📱
+          </div>
+          <h1
+            style={{
+              fontSize: '28px',
+              fontWeight: 'bold',
+              marginBottom: '16px',
+              textShadow: '0 2px 10px rgba(0, 0, 0, 0.9)'
+            }}
+          >
+            Rotate Your Phone
+          </h1>
+          <p
+            style={{
+              fontSize: '18px',
+              color: 'rgba(255, 255, 255, 0.8)',
+              marginBottom: '32px',
+              maxWidth: '80%',
+              textShadow: '0 1px 5px rgba(0, 0, 0, 0.9)'
+            }}
+          >
+            The VIN scanner only works in landscape mode. Please rotate your phone to landscape for the best scanning experience.
+          </p>
+          <button
+            onClick={handleClose}
+            style={{
+              padding: '14px 28px',
+              fontSize: '16px',
+              fontWeight: 'bold',
+              backgroundColor: '#3B82F6',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              boxShadow: '0 4px 15px rgba(59, 130, 246, 0.4)',
+              transition: 'all 0.3s'
+            }}
+            onMouseEnter={(e) => {
+              e.target.style.backgroundColor = '#2563EB';
+              e.target.style.transform = 'translateY(-2px)';
+            }}
+            onMouseLeave={(e) => {
+              e.target.style.backgroundColor = '#3B82F6';
+              e.target.style.transform = 'translateY(0)';
+            }}
+          >
+            Close Scanner
+          </button>
+        </div>
+
+        <style>{`
+          @keyframes pulse {
+            0%, 100% {
+              opacity: 0.6;
+              transform: scale(1);
+            }
+            50% {
+              opacity: 1;
+              transform: scale(1.1);
+            }
+          }
+        `}</style>
+      </div>
+    );
+  }
 
   return (
     <div
