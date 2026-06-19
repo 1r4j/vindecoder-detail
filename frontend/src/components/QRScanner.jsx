@@ -14,6 +14,19 @@ export default function QRScanner({ onScan, onClose }) {
     const startScanning = async () => {
       try {
         setError('');
+        console.log('📱 Locking to landscape orientation...');
+
+        // Lock device to landscape orientation
+        if (screen.orientation && screen.orientation.lock) {
+          try {
+            await screen.orientation.lock('landscape');
+            console.log('✅ Locked to landscape');
+          } catch (orientationError) {
+            console.warn('Could not lock orientation:', orientationError);
+            // Continue anyway - orientation lock is not critical
+          }
+        }
+
         console.log('📱 Requesting back camera access...');
 
         // Request ONLY back camera
@@ -54,6 +67,17 @@ export default function QRScanner({ onScan, onClose }) {
 
     return () => {
       scanningRef.current = false;
+
+      // Unlock orientation when closing
+      if (screen.orientation && screen.orientation.unlock) {
+        try {
+          screen.orientation.unlock();
+          console.log('✅ Orientation unlocked');
+        } catch (err) {
+          console.warn('Could not unlock orientation:', err);
+        }
+      }
+
       if (streamRef.current) {
         streamRef.current.getTracks().forEach(track => track.stop());
       }
