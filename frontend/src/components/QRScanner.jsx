@@ -45,8 +45,13 @@ export default function QRScanner({ onScan, onClose }) {
     // Exit fullscreen
     if (document.fullscreenElement) {
       try {
-        document.exitFullscreen();
-        console.log('Fullscreen exited');
+        const exitPromise = document.exitFullscreen();
+        if (exitPromise && typeof exitPromise.catch === 'function') {
+          exitPromise.catch((err) => {
+            console.warn('Fullscreen exit error (non-critical):', err.message);
+          });
+        }
+        console.log('Fullscreen exit initiated');
       } catch (err) {
         console.warn('Could not exit fullscreen:', err);
       }
@@ -98,13 +103,15 @@ export default function QRScanner({ onScan, onClose }) {
           }
         }
 
-        // Request fullscreen if available
+        // Request fullscreen if available (non-blocking)
         const scannerContainer = document.getElementById('scanner-fullscreen');
         if (scannerContainer && scannerContainer.requestFullscreen) {
           try {
-            await scannerContainer.requestFullscreen().catch(() => {});
+            scannerContainer.requestFullscreen().catch((err) => {
+              console.warn('Fullscreen request failed:', err.message);
+            });
           } catch (err) {
-            console.warn('Fullscreen not available:', err);
+            console.warn('Fullscreen not supported:', err);
           }
         }
 
@@ -168,9 +175,16 @@ export default function QRScanner({ onScan, onClose }) {
         }
       }
 
-      // Exit fullscreen
+      // Exit fullscreen (non-blocking)
       if (document.fullscreenElement) {
-        document.exitFullscreen().catch(() => {});
+        try {
+          const exitPromise = document.exitFullscreen();
+          if (exitPromise && typeof exitPromise.catch === 'function') {
+            exitPromise.catch(() => {});
+          }
+        } catch (err) {
+          console.warn('Exit fullscreen error:', err);
+        }
       }
 
       // Stop camera
@@ -208,7 +222,14 @@ export default function QRScanner({ onScan, onClose }) {
               streamRef.current.getTracks().forEach(track => track.stop());
             }
             if (screen.orientation) {
-              screen.orientation.unlock().catch(() => {});
+              try {
+                const unlockPromise = screen.orientation.unlock();
+                if (unlockPromise && typeof unlockPromise.catch === 'function') {
+                  unlockPromise.catch(() => {});
+                }
+              } catch (err) {
+                console.warn('Unlock orientation error:', err);
+              }
             }
             onScan(vin);
           }, 600);
