@@ -1,5 +1,4 @@
 import { jsPDF } from 'jspdf';
-import 'jspdf-autotable';
 
 export function generatePDF({
   vehicle,
@@ -19,7 +18,6 @@ export function generatePDF({
   const margin = 15;
   let yPosition = margin;
 
-  // Helper function to add text
   const addText = (text, options = {}) => {
     const {
       size = 11,
@@ -39,7 +37,6 @@ export function generatePDF({
     yPosition += lines.length * 6 + 2;
   };
 
-  // Helper function to add line
   const addLine = () => {
     doc.setDrawColor(200, 200, 200);
     doc.line(margin, yPosition, pageWidth - margin, yPosition);
@@ -67,7 +64,7 @@ export function generatePDF({
   addLine();
   yPosition += 4;
 
-  // Title and Invoice Number
+  // Title
   doc.setFontSize(24);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(41, 128, 185);
@@ -76,7 +73,7 @@ export function generatePDF({
 
   yPosition += 8;
 
-  // Invoice Details (left side) and Dates (right side)
+  // Invoice Details
   doc.setFontSize(10);
   doc.setFont(undefined, 'bold');
   addText('Invoice #: TBD', { size: 10 });
@@ -122,86 +119,93 @@ export function generatePDF({
   addLine();
   yPosition += 4;
 
-  // Services Table
+  // Services Table (Manual)
   addText('SERVICE DETAILS', { size: 11, bold: true });
   yPosition += 4;
 
-  const tableData = services.map(service => [
-    service.name,
-    service.description || '',
-    service.quantity.toString(),
-    `${settings?.currency || '$'}${(service.defaultPrice || 0).toFixed(2)}`,
-    `${settings?.currency || '$'}${((service.defaultPrice || 0) * (service.quantity || 1)).toFixed(2)}`
-  ]);
+  // Table Header
+  const colWidths = [60, 40, 20, 30, 30];
+  const tableStartY = yPosition;
+  const headers = ['Description', 'Details', 'Qty', 'Rate', 'Amount'];
 
-  doc.autoTable({
-    head: [['Description', 'Details', 'Qty', 'Rate', 'Amount']],
-    body: tableData,
-    startY: yPosition,
-    margin: { left: margin, right: margin },
-    headStyles: {
-      fillColor: [41, 128, 185],
-      textColor: [255, 255, 255],
-      fontStyle: 'bold',
-      fontSize: 10
-    },
-    bodyStyles: {
-      fontSize: 10,
-      textColor: [0, 0, 0]
-    },
-    alternateRowStyles: {
-      fillColor: [245, 245, 245]
-    },
-    columnStyles: {
-      2: { halign: 'center' },
-      3: { halign: 'right' },
-      4: { halign: 'right' }
-    }
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.setFillColor(41, 128, 185);
+  doc.setTextColor(255, 255, 255);
+
+  let colX = margin;
+  headers.forEach((header, i) => {
+    doc.rect(colX, yPosition, colWidths[i], 8, 'F');
+    doc.text(header, colX + 2, yPosition + 5, { maxWidth: colWidths[i] - 4 });
+    colX += colWidths[i];
   });
 
-  yPosition = doc.lastAutoTable.finalY + 8;
+  yPosition += 8;
+  doc.setTextColor(0, 0, 0);
+  doc.setFont(undefined, 'normal');
 
-  // Summary Section
+  // Table Rows
+  let alternateRow = false;
+  services.forEach(service => {
+    if (yPosition > pageHeight - 40) {
+      doc.addPage();
+      yPosition = margin;
+    }
+
+    if (alternateRow) {
+      doc.setFillColor(245, 245, 245);
+      doc.rect(margin, yPosition - 3, pageWidth - margin * 2, 6, 'F');
+    }
+
+    doc.setFontSize(9);
+    colX = margin;
+    const rowData = [
+      service.name,
+      service.description || '',
+      service.quantity.toString(),
+      `${settings?.currency || '$'}${(service.defaultPrice || 0).toFixed(2)}`,
+      `${settings?.currency || '$'}${((service.defaultPrice || 0) * (service.quantity || 1)).toFixed(2)}`
+    ];
+
+    rowData.forEach((cell, i) => {
+      const align = i >= 2 ? 'right' : 'left';
+      const x = align === 'right' ? colX + colWidths[i] - 2 : colX + 2;
+      doc.text(String(cell), x, yPosition, { maxWidth: colWidths[i] - 4, align });
+      colX += colWidths[i];
+    });
+
+    yPosition += 6;
+    alternateRow = !alternateRow;
+  });
+
+  yPosition += 6;
+
+  // Summary
   const rightX = pageWidth - margin - 50;
   doc.setFontSize(10);
   doc.setFont(undefined, 'normal');
 
   doc.text('Subtotal:', rightX, yPosition);
-  doc.text(
-    `${settings?.currency || '$'}${subtotal.toFixed(2)}`,
-    pageWidth - margin,
-    yPosition,
-    { align: 'right' }
-  );
+  doc.text(`${settings?.currency || '$'}${subtotal.toFixed(2)}`, pageWidth - margin, yPosition, { align: 'right' });
   yPosition += 6;
 
   doc.text(`Tax (${settings?.taxRate || 8}%):`, rightX, yPosition);
-  doc.text(
-    `${settings?.currency || '$'}${tax.toFixed(2)}`,
-    pageWidth - margin,
-    yPosition,
-    { align: 'right' }
-  );
+  doc.text(`${settings?.currency || '$'}${tax.toFixed(2)}`, pageWidth - margin, yPosition, { align: 'right' });
   yPosition += 6;
 
-  // Total - Highlighted
+  // Total
   doc.setFont(undefined, 'bold');
   doc.setFontSize(12);
   doc.setFillColor(41, 128, 185);
   doc.setTextColor(255, 255, 255);
   doc.rect(rightX - 50, yPosition - 2, 50 + margin, 8, 'F');
   doc.text('TOTAL:', rightX, yPosition + 2);
-  doc.text(
-    `${settings?.currency || '$'}${total.toFixed(2)}`,
-    pageWidth - margin,
-    yPosition + 2,
-    { align: 'right' }
-  );
+  doc.text(`${settings?.currency || '$'}${total.toFixed(2)}`, pageWidth - margin, yPosition + 2, { align: 'right' });
 
   doc.setTextColor(0, 0, 0);
   yPosition += 10;
 
-  // Notes (if any)
+  // Notes
   if (notes) {
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
@@ -216,11 +220,6 @@ export function generatePDF({
   }
 
   // Footer
-  if (yPosition > pageHeight - 20) {
-    doc.addPage();
-    yPosition = margin;
-  }
-
   yPosition = pageHeight - 15;
   doc.setFontSize(9);
   doc.setTextColor(150, 150, 150);
@@ -229,11 +228,9 @@ export function generatePDF({
     margin,
     yPosition
   );
-
-  doc.setTextColor(150, 150, 150);
   doc.text('Thank you for your business!', pageWidth / 2, yPosition, { align: 'center' });
 
-  // Save the PDF
+  // Save
   const fileName = `Invoice-${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
