@@ -31,22 +31,6 @@ export default function InvoiceCreator({ vehicle, businessConfig, onClose }) {
   const [showPreview, setShowPreview] = useState(false);
   const [invoiceData, setInvoiceData] = useState(null);
 
-  // Default car detailing services
-  const DEFAULT_SERVICES = [
-    { id: 1, name: 'Exterior Wash', price: 50, category: 'Exterior' },
-    { id: 2, name: 'Interior Vacuum', price: 40, category: 'Interior' },
-    { id: 3, name: 'Ceramic Coat', price: 150, category: 'Premium' },
-    { id: 4, name: 'Window Cleaning', price: 25, category: 'Exterior' },
-    { id: 5, name: 'Tire Shine', price: 20, category: 'Exterior' },
-    { id: 6, name: 'Clay Bar Treatment', price: 60, category: 'Exterior' },
-    { id: 7, name: 'Wax Application', price: 80, category: 'Exterior' },
-    { id: 8, name: 'Leather Conditioning', price: 75, category: 'Interior' },
-    { id: 9, name: 'Paint Correction', price: 150, category: 'Premium' },
-    { id: 10, name: 'Carpet Cleaning', price: 100, category: 'Interior' },
-    { id: 11, name: 'Engine Detailing', price: 120, category: 'Engine' },
-    { id: 12, name: 'Headlight Restoration', price: 90, category: 'Exterior' }
-  ];
-
   useEffect(() => {
     fetchServices();
   }, []);
@@ -54,14 +38,9 @@ export default function InvoiceCreator({ vehicle, businessConfig, onClose }) {
   const fetchServices = async () => {
     try {
       const response = await servicesService.getServices();
-      if (response.data.data && response.data.data.length > 0) {
-        setAvailableServices(response.data.data);
-      } else {
-        setAvailableServices(DEFAULT_SERVICES);
-      }
+      setAvailableServices(response.data.data);
     } catch (err) {
-      console.error('Failed to fetch services, using defaults:', err);
-      setAvailableServices(DEFAULT_SERVICES);
+      console.error('Failed to fetch services:', err);
     }
   };
 
@@ -160,20 +139,10 @@ export default function InvoiceCreator({ vehicle, businessConfig, onClose }) {
 
   const handleDownloadPDF = async () => {
     try {
-      console.log('Starting PDF generation...');
-      console.log('Invoice data:', invoiceData);
-      console.log('Business config:', businessConfig);
-
       const doc = await generateInvoicePDF(invoiceData, businessConfig);
-      console.log('PDF generated successfully');
-      console.log('PDF object:', doc);
-
       downloadPDF(doc, `Invoice_${invoiceData.invoiceNumber}.pdf`);
-      console.log('PDF download initiated');
     } catch (err) {
-      console.error('PDF generation error:', err);
-      console.error('Error stack:', err.stack);
-      setError(`Failed to generate PDF: ${err.message}`);
+      setError('Failed to generate PDF');
     }
   };
 
@@ -254,93 +223,68 @@ export default function InvoiceCreator({ vehicle, businessConfig, onClose }) {
           <div className="form-section">
             <h3 className="section-title">Services</h3>
 
-            {formData.items.length === 0 ? (
-              <p style={{ color: 'var(--text-light)', marginBottom: '16px' }}>No services added yet. Click "Add Service" below to get started.</p>
-            ) : (
-              <div style={{ marginBottom: '16px' }}>
-                {formData.items.map((item, index) => (
-                  <div key={index} style={{ backgroundColor: 'var(--light)', padding: '16px', borderRadius: '8px', marginBottom: '12px', border: '1px solid var(--border)' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr auto', gap: '12px', alignItems: 'end', marginBottom: '12px' }}>
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-light)', marginBottom: '6px', textTransform: 'uppercase' }}>Service</label>
-                        {item.serviceName && !item.serviceName.includes('Custom:') ? (
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            <select
-                              value={item.serviceName}
-                              onChange={(e) => {
-                                if (e.target.value === 'custom') {
-                                  handleItemChange(index, 'serviceName', 'Custom:');
-                                } else {
-                                  handleServiceSelect(index, e.target.value);
-                                }
-                              }}
-                              style={{ flex: 1 }}
-                            >
-                              <option value="">Select a service</option>
-                              {availableServices.map(service => (
-                                <option key={service.id} value={service.name}>{service.name}</option>
-                              ))}
-                              <option value="custom">+ Custom Service</option>
-                            </select>
-                          </div>
-                        ) : (
-                          <input
-                            type="text"
-                            placeholder="Enter custom service name"
-                            value={item.serviceName.replace('Custom:', '').trim()}
-                            onChange={(e) => handleItemChange(index, 'serviceName', 'Custom: ' + e.target.value)}
-                          />
-                        )}
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-light)', marginBottom: '6px', textTransform: 'uppercase' }}>Qty</label>
-                        <input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
-                          min="0.1"
-                          step="0.1"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-light)', marginBottom: '6px', textTransform: 'uppercase' }}>Rate</label>
-                        <input
-                          type="number"
-                          value={item.rate}
-                          onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
-                          min="0"
-                          step="0.01"
-                        />
-                      </div>
-
-                      <div>
-                        <label style={{ display: 'block', fontSize: '12px', fontWeight: '600', color: 'var(--text-light)', marginBottom: '6px', textTransform: 'uppercase' }}>Total</label>
-                        <div style={{ padding: '10px', backgroundColor: 'white', borderRadius: '6px', fontWeight: '600' }}>
-                          ${item.total.toFixed(2)}
-                        </div>
-                      </div>
-
-                      <button
-                        type="button"
-                        className="btn-danger btn-small"
-                        onClick={() => handleRemoveItem(index)}
-                        style={{ height: '44px' }}
+            <div className="invoice-items-table">
+              {formData.items.length === 0 ? (
+                <p style={{ color: 'var(--text-light)', marginBottom: '16px' }}>No services added yet.</p>
+              ) : (
+                formData.items.map((item, index) => (
+                  <div key={index} className="item-row">
+                    <div>
+                      <select
+                        value={item.serviceName}
+                        onChange={(e) => {
+                          if (e.target.value === 'custom') {
+                            handleItemChange(index, 'serviceName', '');
+                          } else {
+                            handleServiceSelect(index, e.target.value);
+                          }
+                        }}
                       >
-                        Remove
-                      </button>
+                        <option value="">Select a service</option>
+                        {availableServices.map(service => (
+                          <option key={service.id} value={service.name}>{service.name}</option>
+                        ))}
+                        <option value="custom">Custom Service</option>
+                      </select>
+                      {item.serviceName === '' && availableServices.length === 0 && (
+                        <input
+                          type="text"
+                          placeholder="Service name"
+                          value={item.serviceName}
+                          onChange={(e) => handleItemChange(index, 'serviceName', e.target.value)}
+                          style={{ marginTop: '8px' }}
+                        />
+                      )}
                     </div>
-
-                    {item.description && !item.serviceName.includes('Custom:') && (
-                      <p style={{ margin: '8px 0 0 0', fontSize: '13px', color: 'var(--text-light)' }}>
-                        {item.description}
-                      </p>
-                    )}
+                    <input
+                      type="number"
+                      placeholder="Qty"
+                      value={item.quantity}
+                      onChange={(e) => handleItemChange(index, 'quantity', e.target.value)}
+                      min="0.1"
+                      step="0.1"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Rate"
+                      value={item.rate}
+                      onChange={(e) => handleItemChange(index, 'rate', e.target.value)}
+                      min="0"
+                      step="0.01"
+                    />
+                    <input
+                      type="number"
+                      placeholder="Total"
+                      value={item.total}
+                      disabled
+                    />
+                    <button type="button" className="btn-danger btn-small" onClick={() => handleRemoveItem(index)}>
+                      Remove
+                    </button>
                   </div>
-                ))}
-              </div>
-            )}
+                ))
+              )}
+            </div>
 
             <button type="button" className="btn-secondary" onClick={handleAddItem}>
               + Add Service
