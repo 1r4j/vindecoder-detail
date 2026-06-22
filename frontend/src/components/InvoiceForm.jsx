@@ -225,6 +225,10 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
               <div style={{ fontWeight: '600' }}>{vehicle.model}</div>
             </div>
             <div>
+              <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-light)', marginBottom: '4px' }}>Color</label>
+              <div style={{ fontWeight: '600' }}>{vehicle.color || 'Not specified'}</div>
+            </div>
+            <div>
               <label style={{ display: 'block', fontSize: '12px', color: 'var(--text-light)', marginBottom: '4px' }}>VIN</label>
               <div style={{ fontWeight: '600', fontSize: '12px', fontFamily: 'monospace' }}>{vehicle.vin}</div>
             </div>
