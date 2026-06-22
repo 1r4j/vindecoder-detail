@@ -5,7 +5,6 @@ import { fileURLToPath } from 'url';
 import { initializeDatabase } from './db.js';
 
 import vinRoutes from './routes/vin.js';
-import invoiceRoutes from './routes/invoices.js';
 import servicesRoutes from './routes/services.js';
 
 const app = express();
@@ -28,14 +27,12 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/api/health',
       vehicles: '/api/vehicles',
-      invoices: '/api/invoices',
       services: '/api/services'
     }
   });
 });
 
 app.use('/api/vehicles', vinRoutes);
-app.use('/api/invoices', invoiceRoutes);
 app.use('/api/services', servicesRoutes);
 
 app.get('/api/health', (req, res) => {
@@ -51,7 +48,7 @@ app.use((req, res) => {
       root: 'GET /',
       health: 'GET /api/health',
       vehicles: 'GET /api/vehicles/list, POST /api/vehicles/decode',
-      invoices: 'GET /api/invoices, POST /api/invoices'
+      services: 'GET /api/services'
     }
   });
 });

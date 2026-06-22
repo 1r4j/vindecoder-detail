@@ -1,16 +1,14 @@
 import { useState } from 'react';
 import { vehicleService } from '../services/api';
 import VehicleDetails from './VehicleDetails';
-import InvoiceCreator from './InvoiceCreator';
 import OptimizedVINScanner from './OptimizedVINScanner';
 
-export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
+export default function VINDecoder() {
   const [vin, setVin] = useState('');
   const [vehicle, setVehicle] = useState(null);
   const [vehicleColor, setVehicleColor] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [showInvoiceCreator, setShowInvoiceCreator] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [recentVehicles, setRecentVehicles] = useState([]);
 
@@ -77,7 +75,6 @@ export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
   const handleQuickSelect = (selectedVehicle) => {
     setVehicle(selectedVehicle);
     setVin(selectedVehicle.vin);
-    setShowInvoiceCreator(false);
   };
 
   return (
@@ -157,9 +154,6 @@ export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
             </div>
 
             <div className="action-buttons">
-              <button className="btn-success" onClick={() => setShowInvoiceCreator(true)}>
-                Create Invoice
-              </button>
               <button className="btn-secondary" onClick={() => setVehicle(null)}>
                 Clear
               </button>
@@ -199,14 +193,6 @@ export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
           </div>
         )}
       </div>
-
-      {showInvoiceCreator && vehicle && (
-        <InvoiceCreator
-          vehicle={vehicle}
-          businessConfig={businessConfig}
-          onClose={() => setShowInvoiceCreator(false)}
-        />
-      )}
     </div>
   );
 }

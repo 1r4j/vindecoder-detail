@@ -10,19 +10,7 @@ const dataFile = path.join(dataDir, 'data.json');
 class SimpleDB {
   constructor() {
     this.vehicles = [];
-    this.invoices = [];
     this.services = [];
-    this.businessConfig = {
-      id: 1,
-      businessName: 'SPARKLE AUTO DETAILING',
-      businessAddress: '123 Main Street, City, State 12345',
-      businessPhone: '(555) 987-6543',
-      businessEmail: 'info@sparkledetail.com',
-      taxRate: 0.08,
-      invoicePrefix: 'INV',
-      paymentTermsDays: 14,
-      currencySymbol: '$'
-    };
     this.load();
   }
 
@@ -31,9 +19,7 @@ class SimpleDB {
       if (fs.existsSync(dataFile)) {
         const data = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
         this.vehicles = data.vehicles || [];
-        this.invoices = data.invoices || [];
         this.services = data.services || [];
-        this.businessConfig = data.businessConfig || this.businessConfig;
       }
     } catch (err) {
       console.warn('Could not load data file:', err.message);
@@ -47,9 +33,7 @@ class SimpleDB {
       }
       fs.writeFileSync(dataFile, JSON.stringify({
         vehicles: this.vehicles,
-        invoices: this.invoices,
-        services: this.services,
-        businessConfig: this.businessConfig
+        services: this.services
       }, null, 2));
     } catch (err) {
       console.error('Failed to save data:', err.message);
@@ -86,19 +70,6 @@ class SimpleDB {
               db.vehicles.push(vehicle);
               db.save();
             }
-          } else if (sql.includes('UPDATE') && sql.includes('businessConfig')) {
-            db.businessConfig = {
-              id: 1,
-              businessName: params[0],
-              businessAddress: params[1],
-              businessPhone: params[2],
-              businessEmail: params[3],
-              taxRate: params[4],
-              invoicePrefix: params[5],
-              paymentTermsDays: params[6],
-              currencySymbol: params[7]
-            };
-            db.save();
           } else if (sql.includes('UPDATE') && sql.includes('vehicles')) {
             const vin = params[1];
             const vehicle = db.vehicles.find(v => v.vin === vin);
@@ -117,9 +88,6 @@ class SimpleDB {
       get: function(...params) {
         try {
           if (sql.includes('SELECT') && sql.includes('WHERE')) {
-            if (sql.includes('businessConfig')) {
-              return db.businessConfig || null;
-            }
             if (sql.includes('vehicles')) {
               if (sql.includes('vin')) {
                 return db.vehicles.find(v => v.vin === params[0]) || null;
