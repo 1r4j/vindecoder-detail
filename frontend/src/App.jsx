@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import './App.css';
 import VINDecoder from './components/VINDecoder';
 import InvoiceManager from './components/InvoiceManager';
+import BusinessConfig from './components/BusinessConfig';
 import Navigation from './components/Navigation';
 
 function App() {
@@ -31,6 +32,7 @@ function App() {
       <main className="app-main">
         {currentPage === 'decoder' && <VINDecoder businessConfig={businessConfig} onBusinessConfigUpdate={fetchBusinessConfig} />}
         {currentPage === 'invoices' && <InvoiceManager businessConfig={businessConfig} />}
+        {currentPage === 'settings' && <BusinessConfig config={businessConfig} onConfigUpdate={fetchBusinessConfig} onClose={() => setCurrentPage('decoder')} />}
       </main>
     </div>
   );

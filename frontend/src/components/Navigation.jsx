@@ -16,6 +16,13 @@ export default function Navigation({ currentPage, setCurrentPage }) {
           >
             Invoices
           </button>
+          <button
+            className={`nav-button ${currentPage === 'settings' ? 'active' : ''}`}
+            onClick={() => setCurrentPage('settings')}
+            title="Business configuration"
+          >
+            ⚙️ Settings
+          </button>
         </div>
       </div>
     </nav>

@@ -1,0 +1,48 @@
+{
+  "vehicles": [
+    {
+      "id": 1,
+      "vin": "2T1BURHE0JC044186",
+      "year": 2018,
+      "make": "TOYOTA",
+      "model": "Corolla",
+      "color": "",
+      "bodyType": "Sedan/Saloon",
+      "engineType": "",
+      "transmission": "",
+      "driveType": "4x2",
+      "gvwr": "",
+      "plant": "CANADA",
+      "rawData": null,
+      "scannedAt": "2026-06-22T21:10:43.211Z"
+    }
+  ],
+  "invoices": [],
+  "services": [
+    {
+      "id": 1,
+      "name": "Paint Correction",
+      "price": 150
+    },
+    {
+      "id": 2,
+      "name": "Ceramic Coating",
+      "price": 500
+    },
+    {
+      "id": 3,
+      "name": "Interior Detailing",
+      "price": 200
+    },
+    {
+      "id": 4,
+      "name": "Exterior Wash",
+      "price": 75
+    },
+    {
+      "id": 5,
+      "name": "Wax Application",
+      "price": 100
+    }
+  ]
+}
