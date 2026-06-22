@@ -6,13 +6,12 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const dataDir = path.join(__dirname, '../data');
 const dataFile = path.join(dataDir, 'data.json');
 
-// In-memory database replacement for testing (no better-sqlite3 needed)
+// Simple JSON-based database implementation
 class SimpleDB {
   constructor() {
     this.vehicles = [];
     this.invoices = [];
     this.services = [];
-    this.businessConfig = {};
     this.load();
   }
 
@@ -23,7 +22,6 @@ class SimpleDB {
         this.vehicles = data.vehicles || [];
         this.invoices = data.invoices || [];
         this.services = data.services || [];
-        this.businessConfig = data.businessConfig || {};
       }
     } catch (err) {
       console.warn('Could not load data file:', err.message);
@@ -38,8 +36,7 @@ class SimpleDB {
       fs.writeFileSync(dataFile, JSON.stringify({
         vehicles: this.vehicles,
         invoices: this.invoices,
-        services: this.services,
-        businessConfig: this.businessConfig
+        services: this.services
       }, null, 2));
     } catch (err) {
       console.error('Failed to save data:', err.message);
@@ -47,13 +44,89 @@ class SimpleDB {
   }
 
   prepare(sql) {
+    const db = this;
+
     return {
-      run: (...params) => {
-        console.log('SQL:', sql, params);
-        return { changes: 1 };
+      run: function(...params) {
+        try {
+          if (sql.includes('INSERT') && sql.includes('vehicles')) {
+            const vehicle = {
+              id: db.vehicles.length + 1,
+              vin: params[0],
+              year: params[1],
+              make: params[2],
+              model: params[3],
+              color: params[4] || '',
+              bodyType: params[5] || '',
+              engineType: params[6] || '',
+              transmission: params[7] || '',
+              driveType: params[8] || '',
+              gvwr: params[9] || '',
+              plant: params[10] || '',
+              rawData: params[11] || null,
+              scannedAt: new Date().toISOString()
+            };
+
+            // Check if vehicle exists
+            const existing = db.vehicles.findIndex(v => v.vin === params[0]);
+            if (existing === -1) {
+              db.vehicles.push(vehicle);
+              db.save();
+            }
+          } else if (sql.includes('UPDATE') && sql.includes('vehicles')) {
+            const vin = params[1];
+            const vehicle = db.vehicles.find(v => v.vin === vin);
+            if (vehicle) {
+              vehicle.color = params[0];
+              db.save();
+            }
+          }
+          return { changes: 1 };
+        } catch (err) {
+          console.error('DB run error:', err);
+          throw err;
+        }
       },
-      get: (...params) => null,
-      all: (...params) => []
+
+      get: function(...params) {
+        try {
+          if (sql.includes('SELECT') && sql.includes('WHERE')) {
+            if (sql.includes('vehicles')) {
+              if (sql.includes('vin')) {
+                return db.vehicles.find(v => v.vin === params[0]) || null;
+              }
+            }
+          }
+          return null;
+        } catch (err) {
+          console.error('DB get error:', err);
+          return null;
+        }
+      },
+
+      all: function(...params) {
+        try {
+          if (sql.includes('SELECT') && sql.includes('vehicles')) {
+            if (sql.includes('WHERE LIKE')) {
+              const searchTerm = params[0];
+              const pattern = searchTerm.replace(/%/g, '').toLowerCase();
+              return db.vehicles.filter(v =>
+                v.vin.toLowerCase().includes(pattern) ||
+                v.make.toLowerCase().includes(pattern) ||
+                (v.model && v.model.toLowerCase().includes(pattern))
+              ).slice(0, 20);
+            } else {
+              const limit = params[0] || 100;
+              const offset = params[1] || 0;
+              return db.vehicles.reverse().slice(offset, offset + limit);
+            }
+          }
+          return [];
+        } catch (err) {
+          console.error('DB all error:', err);
+          return [];
+        }
+      }
     };
   }
 
@@ -80,80 +153,6 @@ export function initializeDatabase() {
   }
 
   console.log('Database initialized at', dataFile);
-}
-
-export function addVehicle(vin, vehicleData) {
-  const existingIdx = db.vehicles.findIndex(v => v.vin === vin);
-  if (existingIdx >= 0) {
-    db.vehicles[existingIdx] = { ...db.vehicles[existingIdx], ...vehicleData, vin };
-  } else {
-    db.vehicles.push({ ...vehicleData, vin });
-  }
-  db.save();
-  return db.vehicles.find(v => v.vin === vin);
-}
-
-export function getVehicleByVIN(vin) {
-  return db.vehicles.find(v => v.vin === vin) || null;
-}
-
-export function getAllVehicles() {
-  return db.vehicles;
-}
-
-export function createInvoice(invoiceData) {
-  const invoice = {
-    id: db.invoices.length + 1,
-    invoiceNumber: `INV-${String(db.invoices.length + 1).padStart(5, '0')}`,
-    ...invoiceData,
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString()
-  };
-  db.invoices.push(invoice);
-  db.save();
-  return invoice;
-}
-
-export function getInvoice(id) {
-  return db.invoices.find(i => i.id === id) || null;
-}
-
-export function getAllInvoices() {
-  return db.invoices;
-}
-
-export function updateInvoice(id, data) {
-  const idx = db.invoices.findIndex(i => i.id === id);
-  if (idx >= 0) {
-    db.invoices[idx] = { ...db.invoices[idx], ...data, updatedAt: new Date().toISOString() };
-    db.save();
-    return db.invoices[idx];
-  }
-  return null;
-}
-
-export function deleteInvoice(id) {
-  const idx = db.invoices.findIndex(i => i.id === id);
-  if (idx >= 0) {
-    db.invoices.splice(idx, 1);
-    db.save();
-    return true;
-  }
-  return false;
-}
-
-export function getServices() {
-  return db.services;
-}
-
-export function getBusinessConfig() {
-  return db.businessConfig;
-}
-
-export function updateBusinessConfig(config) {
-  db.businessConfig = { ...db.businessConfig, ...config };
-  db.save();
-  return db.businessConfig;
 }
 
 export default db;
