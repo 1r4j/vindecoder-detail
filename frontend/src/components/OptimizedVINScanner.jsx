@@ -318,8 +318,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
     const initialize = async () => {
       try {
-        setStatus('Requesting camera permission...');
-
+        // Lock orientation
         if (screen.orientation) {
           try {
             await screen.orientation.lock('landscape-primary').catch(() => {
@@ -330,6 +329,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
           }
         }
 
+        // Step 1: Request camera immediately
+        setStatus('Requesting camera...');
         const stream = await navigator.mediaDevices.getUserMedia({
           video: {
             facingMode: 'environment',
@@ -347,25 +348,57 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         videoRef.current.setAttribute('autoplay', 'true');
         videoRef.current.setAttribute('muted', 'true');
 
-        setStatus('Initializing OCR engine...');
-
-        const { createWorker } = Tesseract;
-        const worker = await createWorker('eng', 1, {
-          corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v4/tesseract-core.wasm.js'
-        });
-        ocrWorkerRef.current = worker;
-
         setStatus('Initializing barcode scanner...');
-        await initializeBarcode();
 
-        setStatus('Ready - Point camera at VIN barcode');
+        // Step 2: Initialize barcode scanner
+        try {
+          await initializeBarcode();
+          console.log('✅ Barcode scanner ready');
+        } catch (err) {
+          console.warn('⚠️ Barcode scanner failed:', err);
+        }
 
+        // Step 3: Initialize OCR in background (non-blocking)
+        setStatus('Ready - Point camera at VIN');
+
+        (async () => {
+          try {
+            setStatus('Loading OCR...');
+            const { createWorker } = Tesseract;
+            const worker = await createWorker('eng', 1, {
+              corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v4/tesseract-core.wasm.js'
+            });
+            ocrWorkerRef.current = worker;
+            console.log('✅ OCR engine ready');
+            setStatus('Ready - Point camera at VIN');
+
+            // Start OCR scanning once ready
+            setTimeout(() => {
+              if (scanningRef.current) {
+                scanVINWithOCR();
+              }
+            }, 500);
+          } catch (err) {
+            console.error('OCR init failed:', err);
+            setStatus('Ready (barcode mode)');
+          }
+        })();
+
+        // Start scanning after camera is ready
         setTimeout(() => {
-          scanVINWithOCR();
+          if (scanningRef.current) {
+            scanVINWithOCR();
+          }
         }, 1000);
       } catch (err) {
         console.error('Init error:', err);
-        setStatus(err.name === 'NotAllowedError' ? 'Camera permission denied' : 'Error: ' + err.message);
+        if (err.name === 'NotAllowedError') {
+          setStatus('❌ Camera permission denied');
+        } else if (err.name === 'NotFoundError') {
+          setStatus('❌ No camera found');
+        } else {
+          setStatus('❌ Error: ' + err.message);
+        }
       }
     };
 
