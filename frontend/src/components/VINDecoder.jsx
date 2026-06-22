@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { vehicleService } from '../services/api';
 import VehicleDetails from './VehicleDetails';
 import InvoiceCreator from './InvoiceCreator';
-import AdvancedVINScanner from './AdvancedVINScanner';
+import OptimizedVINScanner from './OptimizedVINScanner';
 
 export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
   const [vin, setVin] = useState('');
@@ -86,7 +86,7 @@ export default function VINDecoder({ businessConfig, onBusinessConfigUpdate }) {
 
       <div className="content-card">
         {showScanner && (
-          <AdvancedVINScanner onScan={handleScannerScan} onClose={() => setShowScanner(false)} />
+          <OptimizedVINScanner onVINDetected={handleScannerScan} onClose={() => setShowScanner(false)} />
         )}
 
         {!showScanner && (
