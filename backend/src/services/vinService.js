@@ -27,10 +27,10 @@ export async function decodeVIN(vin) {
 
     const vehicleData = parseVINResults(results, cleanVIN);
 
-    // Verify we got the essential data
-    if (!vehicleData.year || !vehicleData.make || !vehicleData.model) {
+    // Verify we got at least year and make (some VINs may not have model in NHTSA DB)
+    if (!vehicleData.year || !vehicleData.make) {
       console.warn(`⚠️ Incomplete VIN data: year=${vehicleData.year}, make=${vehicleData.make}, model=${vehicleData.model}`);
-      throw new Error('Unable to decode VIN completely. This VIN may not exist in the NHTSA database.');
+      throw new Error('Unable to decode VIN. This VIN may not exist in the NHTSA database.');
     }
 
     console.log(`✅ VIN decoded successfully: ${cleanVIN}`, vehicleData);
