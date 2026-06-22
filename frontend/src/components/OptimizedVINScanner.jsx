@@ -6,7 +6,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
   const [detectedVIN, setDetectedVIN] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
-  const [status, setStatus] = useState('Initializing scanner...');
+  const [status, setStatus] = useState('Tap to request camera access');
+  const [cameraReady, setCameraReady] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -16,6 +17,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const ocrWorkerRef = useRef(null);
   const lastDetectionRef = useRef(0);
   const detectionCacheRef = useRef(new Map());
+  const scannerContainerRef = useRef(null);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -35,7 +37,6 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     };
   }, []);
 
-  // VIN validation using checksum algorithm
   const validateVIN = (vin) => {
     if (!vin || typeof vin !== 'string') return false;
 
@@ -115,9 +116,13 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }, 100);
   };
 
-  // Optimized barcode detection focusing on VIN formats
   const initializeBarcode = async () => {
     return new Promise((resolve) => {
+      if (!videoRef.current) {
+        resolve(false);
+        return;
+      }
+
       Quagga.init({
         inputStream: {
           type: 'LiveStream',
@@ -155,9 +160,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     });
   };
 
-  // Optimized OCR focusing on VIN region
   const scanVINWithOCR = async () => {
-    if (!scanningRef.current || !videoRef.current || !canvasRef.current) return;
+    if (!scanningRef.current || !videoRef.current || !canvasRef.current || !ocrWorkerRef.current) return;
 
     const now = Date.now();
     if (now - lastDetectionRef.current < 1500) {
@@ -179,7 +183,6 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       const ctx = canvas.getContext('2d');
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-      // Focus on central region where VIN label typically appears
       const regions = [
         { x: 0.1, y: 0.35, w: 0.8, h: 0.15, name: 'Center' },
         { x: 0.05, y: 0.25, w: 0.9, h: 0.25, name: 'Upper-Center' },
@@ -237,7 +240,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
     if (detectionCacheRef.current.has(cacheKey)) {
       const lastDetection = detectionCacheRef.current.get(cacheKey);
-      if (now - lastDetection < 500) return; // Debounce rapid detections
+      if (now - lastDetection < 500) return;
     }
 
     detectionCacheRef.current.set(cacheKey, now);
@@ -249,13 +252,11 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     scanningRef.current = false;
   };
 
-  // Optimized image processing for VIN text
   const optimizeForVINText = (imageData) => {
     const data = imageData.data;
     const width = imageData.width;
     const height = imageData.height;
 
-    // Convert to grayscale
     const gray = new Uint8ClampedArray(width * height);
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
@@ -264,10 +265,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
     }
 
-    // Calculate optimal threshold using Otsu's method
     const threshold = calculateThreshold(gray);
 
-    // Apply threshold and contrast enhancement
     for (let i = 0; i < gray.length; i++) {
       const binaryValue = gray[i] > threshold ? 255 : 0;
       data[i * 4] = binaryValue;
@@ -311,114 +310,119 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     return threshold;
   };
 
-  useEffect(() => {
-    document.body.style.overflow = 'hidden';
-    document.body.style.position = 'fixed';
-    document.body.style.width = '100%';
+  const requestCameraAccess = async () => {
+    try {
+      document.body.style.overflow = 'hidden';
+      document.body.style.position = 'fixed';
+      document.body.style.width = '100%';
 
-    const initialize = async () => {
-      try {
-        // Lock orientation
-        if (screen.orientation) {
-          try {
-            await screen.orientation.lock('landscape-primary').catch(() => {
-              return screen.orientation.lock('landscape');
-            });
-          } catch (err) {
-            console.warn('Orientation lock failed:', err);
-          }
-        }
+      setStatus('Requesting camera access...');
 
-        // Step 1: Request camera immediately
-        setStatus('Requesting camera...');
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            facingMode: 'environment',
-            width: { ideal: 1920 },
-            height: { ideal: 1080 }
-          },
-          audio: false
-        });
-
-        streamRef.current = stream;
-        if (!videoRef.current) return;
-
-        videoRef.current.srcObject = stream;
-        videoRef.current.setAttribute('playsinline', 'true');
-        videoRef.current.setAttribute('autoplay', 'true');
-        videoRef.current.setAttribute('muted', 'true');
-
-        setStatus('Initializing barcode scanner...');
-
-        // Step 2: Initialize barcode scanner
+      // Request fullscreen
+      if (scannerContainerRef.current?.requestFullscreen) {
         try {
-          await initializeBarcode();
-          console.log('✅ Barcode scanner ready');
+          await scannerContainerRef.current.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
         } catch (err) {
-          console.warn('⚠️ Barcode scanner failed:', err);
+          console.warn('Fullscreen request failed:', err);
         }
+      }
 
-        // Step 3: Initialize OCR in background (non-blocking)
-        setStatus('Ready - Point camera at VIN');
+      // Lock landscape
+      if (screen.orientation) {
+        try {
+          await screen.orientation.lock('landscape-primary').catch(() => {
+            return screen.orientation.lock('landscape');
+          });
+        } catch (err) {
+          console.warn('Orientation lock failed:', err);
+        }
+      }
 
-        (async () => {
-          try {
-            setStatus('Loading OCR...');
-            const { createWorker } = Tesseract;
-            const worker = await createWorker('eng', 1, {
-              corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v4/tesseract-core.wasm.js'
-            });
-            ocrWorkerRef.current = worker;
-            console.log('✅ OCR engine ready');
-            setStatus('Ready - Point camera at VIN');
+      // Request camera with explicit user interaction
+      setStatus('Getting camera stream...');
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: 'environment',
+          width: { ideal: 1920 },
+          height: { ideal: 1080 }
+        },
+        audio: false
+      });
 
-            // Start OCR scanning once ready
+      streamRef.current = stream;
+      if (!videoRef.current) {
+        setStatus('Error: Video element not ready');
+        return;
+      }
+
+      videoRef.current.srcObject = stream;
+      videoRef.current.setAttribute('playsinline', 'true');
+      videoRef.current.setAttribute('autoplay', 'true');
+      videoRef.current.setAttribute('muted', 'true');
+
+      // Wait for video to be ready
+      await new Promise((resolve) => {
+        const checkReady = () => {
+          if (videoRef.current && videoRef.current.readyState === 4) {
+            resolve();
+          } else {
+            setTimeout(checkReady, 100);
+          }
+        };
+        checkReady();
+      });
+
+      setCameraReady(true);
+      setStatus('Initializing barcode scanner...');
+
+      // Initialize barcode
+      try {
+        await initializeBarcode();
+      } catch (err) {
+        console.warn('Barcode init failed:', err);
+      }
+
+      setStatus('Ready - Point camera at VIN');
+
+      // Initialize OCR in background
+      (async () => {
+        try {
+          const { createWorker } = Tesseract;
+          const worker = await createWorker('eng', 1, {
+            corePath: 'https://cdn.jsdelivr.net/npm/tesseract.js-core@v4/tesseract-core.wasm.js'
+          });
+          ocrWorkerRef.current = worker;
+          console.log('✅ OCR ready');
+
+          if (scanningRef.current) {
             setTimeout(() => {
               if (scanningRef.current) {
                 scanVINWithOCR();
               }
             }, 500);
-          } catch (err) {
-            console.error('OCR init failed:', err);
-            setStatus('Ready (barcode mode)');
           }
-        })();
-
-        // Start scanning after camera is ready
-        setTimeout(() => {
-          if (scanningRef.current) {
-            scanVINWithOCR();
-          }
-        }, 1000);
-      } catch (err) {
-        console.error('Init error:', err);
-        if (err.name === 'NotAllowedError') {
-          setStatus('❌ Camera permission denied');
-        } else if (err.name === 'NotFoundError') {
-          setStatus('❌ No camera found');
-        } else {
-          setStatus('❌ Error: ' + err.message);
+        } catch (err) {
+          console.error('OCR init failed:', err);
         }
-      }
-    };
+      })();
 
-    initialize();
-
-    return () => {
-      scanningRef.current = false;
-      document.body.style.overflow = 'auto';
-      document.body.style.position = 'relative';
-      document.body.style.width = 'auto';
-
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
+      // Start barcode scanning
+      setTimeout(() => {
+        if (scanningRef.current) {
+          scanVINWithOCR();
+        }
+      }, 1000);
+    } catch (err) {
+      console.error('Camera error:', err);
+      if (err.name === 'NotAllowedError') {
+        setStatus('❌ Camera permission denied - Please allow camera access');
+      } else if (err.name === 'NotFoundError') {
+        setStatus('❌ No camera found on this device');
+      } else {
+        setStatus(`❌ Error: ${err.message}`);
       }
-      if (ocrWorkerRef.current) {
-        ocrWorkerRef.current.terminate().catch(() => {});
-      }
-      Quagga.stop();
-    };
-  }, []);
+    }
+  };
 
   if (!isLandscape) {
     return (
@@ -432,7 +436,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   }
 
   return (
-    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', margin: 0, padding: 0, zIndex: 10000, display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}>
+    <div ref={scannerContainerRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', margin: 0, padding: 0, zIndex: 10000, display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}>
       {/* Header */}
       <div style={{ height: '60px', backgroundColor: 'white', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '16px', paddingRight: '16px' }}>
         <button onClick={handleClose} style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: '16px', fontWeight: '600', cursor: 'pointer', padding: '8px 12px' }}>Cancel</button>
@@ -442,18 +446,32 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
       {/* Camera Feed */}
       <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
-        <video ref={videoRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover' }} autoPlay playsInline muted />
+        {!cameraReady && (
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', zIndex: 1 }}>
+            <div style={{ color: '#fff', textAlign: 'center' }}>
+              <div style={{ fontSize: '48px', marginBottom: '16px' }}>📷</div>
+              <p style={{ fontSize: '16px', marginBottom: '24px' }}>{status}</p>
+              <button onClick={requestCameraAccess} style={{ padding: '12px 28px', fontSize: '16px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Enable Camera</button>
+            </div>
+          </div>
+        )}
+
+        <video ref={videoRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }} autoPlay playsInline muted />
 
         <canvas ref={canvasRef} style={{ position: 'absolute', display: 'none' }} />
 
-        {/* Yellow Centering Line */}
-        <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '50%', height: '3px', backgroundColor: '#FFD700', zIndex: 2, boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)' }} />
+        {cameraReady && (
+          <>
+            {/* Yellow Centering Line */}
+            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '50%', height: '3px', backgroundColor: '#FFD700', zIndex: 2, boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)' }} />
 
-        {/* Instruction Text */}
-        <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', color: '#fff', fontSize: '14px', fontWeight: '600', textAlign: 'center', zIndex: 2, opacity: 0.9 }}>Point camera at VIN barcode</div>
+            {/* Instruction Text */}
+            <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', color: '#fff', fontSize: '14px', fontWeight: '600', textAlign: 'center', zIndex: 2, opacity: 0.9 }}>Point camera at VIN barcode</div>
 
-        {/* Status Indicator */}
-        <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0, 0, 0, 0.6)', color: '#fff', padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', zIndex: 2 }}>{status}</div>
+            {/* Status Indicator */}
+            <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0, 0, 0, 0.6)', color: '#fff', padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', zIndex: 2 }}>{status}</div>
+          </>
+        )}
       </div>
 
       {/* VIN Confirmation Modal */}
@@ -464,8 +482,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
             <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1E293B', margin: '0 0 32px 0', letterSpacing: '1px', fontFamily: 'monospace' }}>{detectedVIN}</h2>
 
             <div style={{ display: 'flex', gap: '12px' }}>
-              <button onClick={() => { setShowConfirmation(false); scanningRef.current = true; setTimeout(() => scanVINWithOCR(), 500); }} style={{ flex: 1, padding: '12px 24px', backgroundColor: 'white', color: '#1E293B', border: '2px solid #CBD5E1', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer', transition: 'all 0.2s' }} onMouseEnter={(e) => { e.target.style.borderColor = '#4F46E5'; e.target.style.color = '#4F46E5'; }} onMouseLeave={(e) => { e.target.style.borderColor = '#CBD5E1'; e.target.style.color = '#1E293B'; }}>Rescan</button>
-              <button onClick={handleVINConfirmed} style={{ flex: 1, padding: '12px 24px', background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }} onMouseEnter={(e) => { e.target.style.transform = 'translateY(-2px)'; e.target.style.boxShadow = '0 10px 15px rgba(239, 68, 68, 0.3)'; }} onMouseLeave={(e) => { e.target.style.transform = 'translateY(0)'; e.target.style.boxShadow = 'none'; }}>Confirm</button>
+              <button onClick={() => { setShowConfirmation(false); scanningRef.current = true; if (ocrWorkerRef.current) setTimeout(() => scanVINWithOCR(), 500); }} style={{ flex: 1, padding: '12px 24px', backgroundColor: 'white', color: '#1E293B', border: '2px solid #CBD5E1', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}>Rescan</button>
+              <button onClick={handleVINConfirmed} style={{ flex: 1, padding: '12px 24px', background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)', color: 'white', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: 'pointer' }}>Confirm</button>
             </div>
           </div>
         </div>
