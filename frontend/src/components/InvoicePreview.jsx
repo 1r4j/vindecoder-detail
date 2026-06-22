@@ -12,6 +12,7 @@ export default function InvoicePreview({
   tax,
   total,
   settings,
+  invoiceNumber,
   onBack,
   onConfirm,
   loading
@@ -53,6 +54,7 @@ export default function InvoicePreview({
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'start', marginBottom: '16px' }}>
               <div>
                 <h1 style={{ margin: '0 0 8px 0', fontSize: '28px' }}>{settings?.businessName || 'Your Business'}</h1>
+                <div style={{ fontSize: '14px', color: 'var(--primary)', fontWeight: '600', marginTop: '4px' }}>{invoiceNumber}</div>
                 <div style={{ fontSize: '14px', color: 'var(--text-light)' }}>
                   {settings?.address && <div>{settings.address}</div>}
                   {settings?.city && <div>{settings.city}, {settings.state} {settings.zipCode}</div>}

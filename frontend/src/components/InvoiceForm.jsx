@@ -25,6 +25,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
   const [customService, setCustomService] = useState({ name: '', description: '', price: '' });
 
   const [preview, setPreview] = useState(false);
+  const [nextInvoiceNumber, setNextInvoiceNumber] = useState('INV-00001');
 
   useEffect(() => {
     loadInitialData();
@@ -32,15 +33,23 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
 
   const loadInitialData = async () => {
     try {
-      const [servicesRes, customersRes, settingsRes] = await Promise.all([
+      const [servicesRes, customersRes, settingsRes, invoicesRes] = await Promise.all([
         servicesService.getList(),
         customerService.getList(),
-        settingsService.get()
+        settingsService.get(),
+        invoiceService.getList(1000, 0)
       ]);
 
       setServices(servicesRes.data.data || []);
       setCustomers(customersRes.data.data || []);
-      setSettings(settingsRes.data.data);
+      const settingsData = settingsRes.data.data;
+      setSettings(settingsData);
+
+      const invoices = invoicesRes.data.data || [];
+      const prefix = settingsData?.invoicePrefix || 'INV';
+      const nextNumber = invoices.length + 1;
+      const invoiceNumber = `${prefix}-${String(nextNumber).padStart(5, '0')}`;
+      setNextInvoiceNumber(invoiceNumber);
     } catch (err) {
       console.error('Failed to load data:', err);
       setError('Failed to load services and customers');
@@ -197,6 +206,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
         tax={tax}
         total={total}
         settings={settings}
+        invoiceNumber={nextInvoiceNumber}
         onBack={() => setPreview(false)}
         onConfirm={handleSubmit}
         loading={loading}
