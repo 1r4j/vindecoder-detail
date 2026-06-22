@@ -2,7 +2,7 @@ import axios from 'axios';
 
 const NHTSA_API_BASE = 'https://vpic.nhtsa.dot.gov/api/vehicles';
 
-// Use NHTSA's DecodeVinFull endpoint for comprehensive vehicle data
+// Use NHTSA's DecodeVin endpoint for vehicle data
 export async function decodeVIN(vin) {
   if (!vin || vin.length !== 17) {
     throw new Error('Invalid VIN format. VINs must be exactly 17 characters.');
@@ -11,53 +11,41 @@ export async function decodeVIN(vin) {
   const cleanVIN = vin.toUpperCase().trim();
 
   try {
-    // Use DecodeVinFull endpoint which provides more complete data
-    const response = await axios.get(`${NHTSA_API_BASE}/DecodeVinFull/${cleanVIN}?format=json`);
+    console.log(`🔍 Decoding VIN: ${cleanVIN}`);
 
-    if (response.data.Count === 0) {
-      // Try alternative DecodeVin endpoint if DecodeVinFull returns no results
-      return await decodeVINAlternative(cleanVIN);
+    // Use DecodeVin endpoint
+    const response = await axios.get(`${NHTSA_API_BASE}/DecodeVin/${cleanVIN}?format=json`);
+
+    if (!response.data || response.data.Count === 0) {
+      throw new Error('VIN not found in NHTSA database. Please verify the VIN number is correct.');
     }
 
     const results = response.data.Results;
+    if (!results || !Array.isArray(results)) {
+      throw new Error('Invalid response from NHTSA API.');
+    }
+
     const vehicleData = parseVINResults(results, cleanVIN);
 
+    // Verify we got the essential data
     if (!vehicleData.year || !vehicleData.make || !vehicleData.model) {
-      throw new Error('Unable to decode VIN. Please check the VIN and try again.');
+      console.warn(`⚠️ Incomplete VIN data: year=${vehicleData.year}, make=${vehicleData.make}, model=${vehicleData.model}`);
+      throw new Error('Unable to decode VIN completely. This VIN may not exist in the NHTSA database.');
     }
 
     console.log(`✅ VIN decoded successfully: ${cleanVIN}`, vehicleData);
     return vehicleData;
   } catch (error) {
     console.error(`❌ VIN decoding error for ${cleanVIN}:`, error.message);
+
     if (error.response?.status === 404) {
       throw new Error('VIN not found. Please verify the VIN number.');
     }
-    if (error.message && error.message.includes('Unable to decode')) {
+
+    if (error.message && (error.message.includes('Unable to decode') || error.message.includes('not found') || error.message.includes('Invalid response'))) {
       throw error;
     }
-    throw new Error(error.message || 'Failed to decode VIN. Please try again.');
-  }
-}
 
-// Fallback to DecodeVin endpoint if DecodeVinFull fails
-async function decodeVINAlternative(vin) {
-  try {
-    const response = await axios.get(`${NHTSA_API_BASE}/DecodeVin/${vin}?format=json`);
-
-    if (response.data.Count === 0 || !response.data.Results) {
-      throw new Error('VIN not found in NHTSA database.');
-    }
-
-    const results = response.data.Results;
-    const vehicleData = parseVINResults(results, vin);
-
-    if (!vehicleData.year || !vehicleData.make || !vehicleData.model) {
-      throw new Error('Unable to decode VIN. Please check the VIN and try again.');
-    }
-
-    return vehicleData;
-  } catch (error) {
     throw new Error(error.message || 'Failed to decode VIN. Please try again.');
   }
 }
