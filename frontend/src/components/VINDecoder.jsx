@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { vehicleService } from '../services/api';
 import VehicleDetails from './VehicleDetails';
+import VINBreakdown from './VINBreakdown';
 import OptimizedVINScanner from './OptimizedVINScanner';
 
-export default function VINDecoder() {
+export default function VINDecoder({ onVehicleSelected }) {
   const [vin, setVin] = useState('');
   const [vehicle, setVehicle] = useState(null);
   const [vehicleColor, setVehicleColor] = useState('');
@@ -11,6 +12,33 @@ export default function VINDecoder() {
   const [loading, setLoading] = useState(false);
   const [showScanner, setShowScanner] = useState(false);
   const [recentVehicles, setRecentVehicles] = useState([]);
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Load vehicle history from localStorage on mount
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('vehicleHistory');
+      if (saved) {
+        setRecentVehicles(JSON.parse(saved));
+      }
+    } catch (err) {
+      console.error('Failed to load vehicle history:', err);
+    }
+  }, []);
+
+  // Save vehicle history to localStorage when it changes
+  const saveVehicleToHistory = (vehicleData) => {
+    try {
+      setRecentVehicles(prev => {
+        const filtered = prev.filter(v => v.id !== vehicleData.id);
+        const updated = [vehicleData, ...filtered].slice(0, 50); // Keep last 50 vehicles
+        localStorage.setItem('vehicleHistory', JSON.stringify(updated));
+        return updated;
+      });
+    } catch (err) {
+      console.error('Failed to save vehicle history:', err);
+    }
+  };
 
   const decodeVIN = async (vinToDecude) => {
     setError('');
@@ -23,11 +51,7 @@ export default function VINDecoder() {
       console.log('✅ VIN decoded:', vinToDecude, response.data.data);
       setVehicle(response.data.data);
       setVehicleColor(response.data.data.color || '');
-
-      setRecentVehicles(prev => {
-        const filtered = prev.filter(v => v.id !== response.data.data.id);
-        return [response.data.data, ...filtered].slice(0, 5);
-      });
+      saveVehicleToHistory(response.data.data);
     } catch (err) {
       console.error('Decode error:', err);
       setError(err.response?.data?.error || 'Failed to decode VIN. Please check and try again.');
@@ -118,6 +142,8 @@ export default function VINDecoder() {
           <>
             <VehicleDetails vehicle={vehicle} />
 
+            <VINBreakdown vin={vin} />
+
             <div style={{ marginBottom: '24px', paddingTop: '24px', borderTop: '1px solid var(--border)' }}>
               <h3 style={{ marginBottom: '12px' }}>Vehicle Color</h3>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '8px' }}>
@@ -157,13 +183,28 @@ export default function VINDecoder() {
               <button className="btn-secondary" onClick={() => setVehicle(null)}>
                 Clear
               </button>
+              {onVehicleSelected && (
+                <button className="btn-primary" onClick={() => onVehicleSelected(vehicle)}>
+                  💼 Create Invoice
+                </button>
+              )}
             </div>
           </>
         )}
 
         {recentVehicles.length > 0 && !vehicle && (
           <div>
-            <h3>Recent Vehicles</h3>
+            <div style={{ marginBottom: '16px' }}>
+              <h3 style={{ marginBottom: '12px' }}>Vehicle History ({recentVehicles.length})</h3>
+              <input
+                type="text"
+                placeholder="Search by year, make, model, or VIN..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                style={{ width: '100%', marginBottom: '12px' }}
+              />
+            </div>
+
             <table>
               <thead>
                 <tr>
@@ -171,25 +212,45 @@ export default function VINDecoder() {
                   <th>Make</th>
                   <th>Model</th>
                   <th>Body Type</th>
+                  <th>VIN</th>
                   <th>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {recentVehicles.map((v) => (
-                  <tr key={v.id}>
-                    <td>{v.year}</td>
-                    <td>{v.make}</td>
-                    <td>{v.model}</td>
-                    <td>{v.bodyType}</td>
-                    <td>
-                      <button className="btn-small btn-primary" onClick={() => handleQuickSelect(v)}>
-                        Select
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {recentVehicles
+                  .filter(v =>
+                    v.year?.toString().includes(searchQuery) ||
+                    v.make?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    v.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    v.vin?.toLowerCase().includes(searchQuery.toLowerCase())
+                  )
+                  .map((v) => (
+                    <tr key={v.id}>
+                      <td>{v.year}</td>
+                      <td>{v.make}</td>
+                      <td>{v.model}</td>
+                      <td>{v.bodyType}</td>
+                      <td style={{ fontSize: '12px', fontFamily: 'monospace' }}>{v.vin}</td>
+                      <td>
+                        <button className="btn-small btn-primary" onClick={() => handleQuickSelect(v)}>
+                          Select
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
               </tbody>
             </table>
+
+            {searchQuery && recentVehicles.filter(v =>
+              v.year?.toString().includes(searchQuery) ||
+              v.make?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              v.model?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+              v.vin?.toLowerCase().includes(searchQuery.toLowerCase())
+            ).length === 0 && (
+              <p style={{ color: 'var(--text-light)', textAlign: 'center', padding: '20px' }}>
+                No vehicles match your search
+              </p>
+            )}
           </div>
         )}
       </div>

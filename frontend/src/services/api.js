@@ -15,4 +15,31 @@ export const vehicleService = {
   updateColor: (vin, color) => api.patch(`/vehicles/${vin}/color`, { color })
 };
 
+export const invoiceService = {
+  create: (invoiceData) => api.post('/invoices', invoiceData),
+  getList: (limit = 100, offset = 0, status = null) =>
+    api.get('/invoices', { params: { limit, offset, ...(status && { status }) } }),
+  getById: (id) => api.get(`/invoices/${id}`),
+  update: (id, data) => api.patch(`/invoices/${id}`, data),
+  delete: (id) => api.delete(`/invoices/${id}`),
+  search: (query) => api.get('/invoices/search', { params: { q: query } })
+};
+
+export const customerService = {
+  create: (customerData) => api.post('/customers', customerData),
+  getList: () => api.get('/customers'),
+  getById: (id) => api.get(`/customers/${id}`),
+  update: (id, data) => api.patch(`/customers/${id}`, data),
+  delete: (id) => api.delete(`/customers/${id}`)
+};
+
+export const settingsService = {
+  get: () => api.get('/settings'),
+  update: (settings) => api.patch('/settings', settings)
+};
+
+export const servicesService = {
+  getList: () => api.get('/services')
+};
+
 export default api;

@@ -6,6 +6,9 @@ import { initializeDatabase } from './db.js';
 
 import vinRoutes from './routes/vin.js';
 import servicesRoutes from './routes/services.js';
+import invoicesRoutes from './routes/invoices.js';
+import customersRoutes from './routes/customers.js';
+import settingsRoutes from './routes/settings.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -27,13 +30,19 @@ app.get('/', (req, res) => {
     endpoints: {
       health: '/api/health',
       vehicles: '/api/vehicles',
-      services: '/api/services'
+      services: '/api/services',
+      invoices: '/api/invoices',
+      customers: '/api/customers',
+      settings: '/api/settings'
     }
   });
 });
 
 app.use('/api/vehicles', vinRoutes);
 app.use('/api/services', servicesRoutes);
+app.use('/api/invoices', invoicesRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/settings', settingsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
