@@ -120,91 +120,151 @@ export function generatePDF({
   addLine();
   yPosition += 4;
 
-  // Services Table (Manual)
-  addText('SERVICE DETAILS', { size: 11, bold: true });
-  yPosition += 4;
+  // Services Section
+  addText('SERVICE DETAILS', { size: 12, bold: true, color: [41, 128, 185] });
+  yPosition += 6;
 
-  // Table Header
-  const colWidths = [60, 40, 20, 30, 30];
-  const tableStartY = yPosition;
-  const headers = ['Description', 'Details', 'Qty', 'Rate', 'Amount'];
+  // Improved table layout
+  const tableMargin = margin;
+  const tableWidth = pageWidth - (margin * 2);
 
+  // Column widths - optimized for readability
+  const colWidths = {
+    service: tableWidth * 0.40,      // Service name - 40%
+    qty: tableWidth * 0.12,          // Quantity - 12%
+    rate: tableWidth * 0.24,         // Unit price - 24%
+    amount: tableWidth * 0.24        // Total - 24%
+  };
+
+  // Header background
+  doc.setFillColor(79, 70, 229);  // Indigo color
+  doc.rect(tableMargin, yPosition, tableWidth, 9, 'F');
+
+  // Header text
   doc.setFontSize(10);
   doc.setFont(undefined, 'bold');
-  doc.setFillColor(41, 128, 185);
   doc.setTextColor(255, 255, 255);
 
-  let colX = margin;
-  headers.forEach((header, i) => {
-    doc.rect(colX, yPosition, colWidths[i], 8, 'F');
-    doc.text(header, colX + 2, yPosition + 5, { maxWidth: colWidths[i] - 4 });
-    colX += colWidths[i];
-  });
+  const headerY = yPosition + 2.5;
+  doc.text('Service', tableMargin + 2, headerY);
+  doc.text('Qty', tableMargin + colWidths.service + 2, headerY);
+  doc.text('Unit Price', tableMargin + colWidths.service + colWidths.qty + 2, headerY);
+  doc.text('Total', tableMargin + colWidths.service + colWidths.qty + colWidths.rate + 2, headerY, { align: 'right' });
 
-  yPosition += 8;
+  yPosition += 11;
   doc.setTextColor(0, 0, 0);
   doc.setFont(undefined, 'normal');
 
-  // Table Rows
-  let alternateRow = false;
-  services.forEach(service => {
-    if (yPosition > pageHeight - 40) {
+  // Service rows
+  let rowCount = 0;
+  services.forEach((service, index) => {
+    // Check if need new page
+    if (yPosition > pageHeight - 60) {
       doc.addPage();
       yPosition = margin;
     }
 
-    if (alternateRow) {
-      doc.setFillColor(245, 245, 245);
-      doc.rect(margin, yPosition - 3, pageWidth - margin * 2, 6, 'F');
+    // Alternate row background for better readability
+    if (index % 2 === 0) {
+      doc.setFillColor(248, 250, 252);  // Light blue-gray
+      doc.rect(tableMargin, yPosition - 1, tableWidth, 10, 'F');
     }
 
-    doc.setFontSize(9);
-    colX = margin;
-    const rowData = [
-      service.name,
-      service.description || '',
-      service.quantity.toString(),
-      `${settings?.currency || '$'}${(service.defaultPrice || 0).toFixed(2)}`,
-      `${settings?.currency || '$'}${((service.defaultPrice || 0) * (service.quantity || 1)).toFixed(2)}`
-    ];
+    // Service name (bold, larger)
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'bold');
+    const serviceName = service.name;
+    const nameLines = doc.splitTextToSize(serviceName, colWidths.service - 4);
+    doc.text(nameLines, tableMargin + 2, yPosition);
 
-    rowData.forEach((cell, i) => {
-      const align = i >= 2 ? 'right' : 'left';
-      const x = align === 'right' ? colX + colWidths[i] - 2 : colX + 2;
-      doc.text(String(cell), x, yPosition, { maxWidth: colWidths[i] - 4, align });
-      colX += colWidths[i];
-    });
+    const nameHeight = nameLines.length * 4;
 
-    yPosition += 6;
-    alternateRow = !alternateRow;
+    // Service description (if exists, smaller and lighter)
+    if (service.description) {
+      doc.setFontSize(8);
+      doc.setFont(undefined, 'normal');
+      doc.setTextColor(100, 100, 100);
+      const descLines = doc.splitTextToSize(service.description, colWidths.service - 4);
+      doc.text(descLines, tableMargin + 2, yPosition + nameHeight + 1);
+    }
+
+    // Reset text color for data
+    doc.setTextColor(0, 0, 0);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+
+    // Quantity (centered)
+    const qty = service.quantity.toString();
+    doc.text(qty, tableMargin + colWidths.service + (colWidths.qty / 2), yPosition + 3, { align: 'center' });
+
+    // Unit price (right aligned)
+    const unitPrice = `${settings?.currency || '$'}${(service.defaultPrice || 0).toFixed(2)}`;
+    doc.text(unitPrice, tableMargin + colWidths.service + colWidths.qty + colWidths.rate - 2, yPosition + 3, { align: 'right' });
+
+    // Total amount (bold, right aligned)
+    doc.setFont(undefined, 'bold');
+    const totalAmount = `${settings?.currency || '$'}${((service.defaultPrice || 0) * (service.quantity || 1)).toFixed(2)}`;
+    doc.text(totalAmount, tableMargin + tableWidth - 2, yPosition + 3, { align: 'right' });
+
+    // Add separator line between rows
+    doc.setDrawColor(220, 220, 220);
+    doc.line(tableMargin, yPosition + 8, tableMargin + tableWidth, yPosition + 8);
+
+    yPosition += 10;
+    rowCount++;
   });
 
+  // Summary section with clean layout
   yPosition += 6;
 
-  // Summary
-  const rightX = pageWidth - margin - 50;
-  doc.setFontSize(10);
+  // Draw a box for summary
+  const summaryBoxX = pageWidth - margin - 100;
+  const summaryBoxY = yPosition;
+  const summaryBoxWidth = 100;
+  const summaryBoxHeight = 30;
+
+  // Light background for summary box
+  doc.setFillColor(248, 250, 252);
+  doc.rect(summaryBoxX, summaryBoxY, summaryBoxWidth, summaryBoxHeight, 'F');
+
+  // Border
+  doc.setDrawColor(79, 70, 229);
+  doc.setLineWidth(0.5);
+  doc.rect(summaryBoxX, summaryBoxY, summaryBoxWidth, summaryBoxHeight);
+
+  // Summary text
+  let summaryY = summaryBoxY + 3;
+  const summaryLabelX = summaryBoxX + 2;
+  const summaryValueX = summaryBoxX + summaryBoxWidth - 2;
+
+  // Subtotal
+  doc.setFontSize(9);
   doc.setFont(undefined, 'normal');
+  doc.setTextColor(100, 100, 100);
+  doc.text('Subtotal:', summaryLabelX, summaryY);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`${settings?.currency || '$'}${subtotal.toFixed(2)}`, summaryValueX, summaryY, { align: 'right' });
+  summaryY += 6;
 
-  doc.text('Subtotal:', rightX, yPosition);
-  doc.text(`${settings?.currency || '$'}${subtotal.toFixed(2)}`, pageWidth - margin, yPosition, { align: 'right' });
-  yPosition += 6;
+  // Tax
+  doc.setTextColor(100, 100, 100);
+  doc.text(`Tax (${settings?.taxRate || 8}%):`, summaryLabelX, summaryY);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`${settings?.currency || '$'}${tax.toFixed(2)}`, summaryValueX, summaryY, { align: 'right' });
+  summaryY += 8;
 
-  doc.text(`Tax (${settings?.taxRate || 8}%):`, rightX, yPosition);
-  doc.text(`${settings?.currency || '$'}${tax.toFixed(2)}`, pageWidth - margin, yPosition, { align: 'right' });
-  yPosition += 6;
-
-  // Total
+  // Total (highlighted)
   doc.setFont(undefined, 'bold');
-  doc.setFontSize(12);
-  doc.setFillColor(41, 128, 185);
+  doc.setFontSize(11);
+  doc.setFillColor(79, 70, 229);
   doc.setTextColor(255, 255, 255);
-  doc.rect(rightX - 50, yPosition - 2, 50 + margin, 8, 'F');
-  doc.text('TOTAL:', rightX, yPosition + 2);
-  doc.text(`${settings?.currency || '$'}${total.toFixed(2)}`, pageWidth - margin, yPosition + 2, { align: 'right' });
+  doc.rect(summaryBoxX, summaryY - 2, summaryBoxWidth, 8, 'F');
+  doc.text('TOTAL:', summaryLabelX, summaryY + 1);
+  doc.text(`${settings?.currency || '$'}${total.toFixed(2)}`, summaryValueX, summaryY + 1, { align: 'right' });
 
   doc.setTextColor(0, 0, 0);
-  yPosition += 10;
+  doc.setFont(undefined, 'normal');
+  yPosition = summaryBoxY + summaryBoxHeight + 8;
 
   // Notes
   if (notes) {
