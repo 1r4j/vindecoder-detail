@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { loadGoogleSignIn, initializeGoogleButton, handleGoogleSignIn } from '../utils/oauth';
 
 export default function Login({ onSuccess }) {
-  const { login, error, setError } = useAuth();
+  const { login, register, error, setError } = useAuth();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -41,10 +41,25 @@ export default function Login({ onSuccess }) {
     setLoading(true);
 
     try {
-      const result = await login(email, password);
+      let result;
+
+      if (isRegistering) {
+        // Create account
+        console.log('Registering new account...');
+        result = await register(email, password, name);
+      } else {
+        // Login to existing account
+        console.log('Logging in...');
+        result = await login(email, password);
+      }
+
       if (result.success) {
+        console.log('Authentication successful');
         if (onSuccess) onSuccess();
       }
+    } catch (err) {
+      console.error('Auth error:', err);
+      setError(err.message || 'Authentication failed');
     } finally {
       setLoading(false);
     }
