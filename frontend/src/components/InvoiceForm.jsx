@@ -135,6 +135,11 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
       const invoiceData = {
         customerId: parseInt(customerId),
         vin: vehicle.vin,
+        year: vehicle.year,
+        make: vehicle.make,
+        model: vehicle.model,
+        color: vehicle.color,
+        bodyType: vehicle.bodyType,
         invoiceDate,
         serviceDate,
         items: selectedServices.map(s => ({

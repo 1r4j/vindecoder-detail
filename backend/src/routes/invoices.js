@@ -12,7 +12,7 @@ const generateInvoiceNumber = () => {
 
 router.post('/', (req, res) => {
   try {
-    const { customerId, vin, invoiceDate, serviceDate, items, subtotal, tax, discount, total, notes } = req.body;
+    const { customerId, vin, year, make, model, color, bodyType, invoiceDate, serviceDate, items, subtotal, tax, discount, total, notes } = req.body;
     const userId = req.userId;
 
     if (!customerId || !vin || !items || items.length === 0) {
@@ -29,6 +29,11 @@ router.post('/', (req, res) => {
       invoiceNumber,
       customerId,
       vin,
+      year: year || 'Not specified',
+      make: make || 'Not specified',
+      model: model || 'Not specified',
+      color: color || 'Not specified',
+      bodyType: bodyType || 'N/A',
       invoiceDate,
       serviceDate,
       subtotal,
