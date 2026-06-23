@@ -43,8 +43,7 @@ export function initializeGoogleButton(buttonId, onSuccess) {
       size: 'large',
       text: 'signin_with',
       theme: 'outline',
-      locale: 'en_US',
-      width: '100%'
+      locale: 'en_US'
     }
   );
 }
