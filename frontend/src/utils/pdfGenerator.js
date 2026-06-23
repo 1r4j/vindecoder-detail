@@ -10,7 +10,8 @@ export function generatePDF({
   subtotal,
   tax,
   total,
-  settings
+  settings,
+  invoiceNumber
 }) {
   const doc = new jsPDF();
   const pageWidth = doc.internal.pageSize.getWidth();
@@ -76,7 +77,7 @@ export function generatePDF({
   // Invoice Details
   doc.setFontSize(10);
   doc.setFont(undefined, 'bold');
-  addText('Invoice #: TBD', { size: 10 });
+  addText('Invoice #: ' + (invoiceNumber || 'TBD'), { size: 10 });
   addText('Date: ' + new Date(invoiceDate).toLocaleDateString(), { size: 10 });
 
   const dueDate = new Date(invoiceDate);

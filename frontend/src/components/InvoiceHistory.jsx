@@ -66,15 +66,19 @@ export default function InvoiceHistory() {
     setExportingId(invoice.id);
     try {
       const customer = customers[invoice.customerId] || {};
+
+      // Get vehicle info from invoice
+      const vehicle = {
+        year: invoice.year || 'Not specified',
+        make: invoice.make || 'Not specified',
+        model: invoice.model || 'Not specified',
+        bodyType: invoice.bodyType || 'N/A',
+        vin: invoice.vin || 'Not specified',
+        color: invoice.color || 'Not specified'
+      };
+
       generatePDF({
-        vehicle: {
-          year: invoice.year,
-          make: invoice.make,
-          model: invoice.model,
-          bodyType: invoice.bodyType,
-          vin: invoice.vin,
-          color: invoice.color
-        },
+        vehicle,
         customer,
         services: invoice.items || [],
         invoiceDate: invoice.invoiceDate,
@@ -83,9 +87,11 @@ export default function InvoiceHistory() {
         subtotal: invoice.subtotal,
         tax: invoice.tax,
         total: invoice.total,
-        settings
+        settings,
+        invoiceNumber: invoice.invoiceNumber
       });
     } catch (err) {
+      console.error('PDF generation error:', err);
       setError('Failed to generate PDF');
     } finally {
       setExportingId(null);
