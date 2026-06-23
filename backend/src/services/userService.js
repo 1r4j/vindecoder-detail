@@ -82,9 +82,14 @@ export function getUserById(userId) {
 
 export function verifyPassword(email, password) {
   try {
-    const user = getUserByEmail(email);
+    const user = getUserByEmail(email.toLowerCase());
     if (!user) {
       throw new Error('User not found');
+    }
+
+    // Check if this is an OAuth user without password
+    if (!user.password) {
+      throw new Error('This account uses social login. Please sign in with Google or Apple.');
     }
 
     const isValid = bcrypt.compareSync(password, user.password);
