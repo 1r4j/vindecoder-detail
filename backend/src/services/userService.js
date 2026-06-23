@@ -3,15 +3,20 @@ import db from '../db.js';
 
 export function createUser(email, password, name) {
   try {
+    console.log('[AUTH] Creating user:', { email, name, passwordLength: password.length });
+    console.log('[AUTH] Current users in database:', db.users.length);
+
     // Check if user already exists
     const existingUser = db.users.find(u => u.email === email.toLowerCase());
     if (existingUser) {
+      console.log('[AUTH] User already exists:', email);
       throw new Error('User with this email already exists');
     }
 
     // Hash password
     const salt = bcrypt.genSaltSync(10);
     const hashedPassword = bcrypt.hashSync(password, salt);
+    console.log('[AUTH] Password hashed successfully');
 
     // Create user
     const userId = Math.max(0, ...db.users.map(u => u.id)) + 1;
@@ -39,8 +44,16 @@ export function createUser(email, password, name) {
       }
     };
 
+    console.log('[AUTH] User object created with ID:', userId);
     db.users.push(user);
+    console.log('[AUTH] User pushed to db.users, total users:', db.users.length);
+
     db.save();
+    console.log('[AUTH] Database saved');
+
+    // Verify user was saved
+    const savedUser = db.users.find(u => u.email === email.toLowerCase());
+    console.log('[AUTH] User verification after save:', savedUser ? 'FOUND' : 'NOT FOUND');
 
     // Return user without password
     return {
@@ -50,6 +63,7 @@ export function createUser(email, password, name) {
       createdAt: user.createdAt
     };
   } catch (error) {
+    console.error('[AUTH] Error creating user:', error.message);
     throw new Error(`Failed to create user: ${error.message}`);
   }
 }

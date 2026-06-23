@@ -7,22 +7,30 @@ const router = express.Router();
 // Register a new user
 router.post('/register', (req, res) => {
   try {
+    console.log('[AUTH_ROUTE] Register endpoint called');
     const { email, password, name } = req.body;
+    console.log('[AUTH_ROUTE] Register request:', { email, name, passwordLength: password?.length });
 
     if (!email || !password) {
+      console.log('[AUTH_ROUTE] Missing email or password');
       return res.status(400).json({
         error: 'Email and password are required'
       });
     }
 
     if (password.length < 6) {
+      console.log('[AUTH_ROUTE] Password too short');
       return res.status(400).json({
         error: 'Password must be at least 6 characters'
       });
     }
 
+    console.log('[AUTH_ROUTE] Calling createUser...');
     const user = createUser(email, password, name);
+    console.log('[AUTH_ROUTE] User created:', { id: user.id, email: user.email });
+
     const token = generateToken(user.id);
+    console.log('[AUTH_ROUTE] Token generated, sending response');
 
     res.status(201).json({
       success: true,
@@ -30,6 +38,7 @@ router.post('/register', (req, res) => {
       user
     });
   } catch (error) {
+    console.error('[AUTH_ROUTE] Register error:', error.message);
     res.status(400).json({
       error: error.message
     });
@@ -39,21 +48,27 @@ router.post('/register', (req, res) => {
 // Login user
 router.post('/login', (req, res) => {
   try {
+    console.log('[AUTH_ROUTE] Login endpoint called');
     const { email, password } = req.body;
+    console.log('[AUTH_ROUTE] Login request for email:', email);
 
     if (!email || !password) {
+      console.log('[AUTH_ROUTE] Missing email or password');
       return res.status(400).json({
         error: 'Email and password are required'
       });
     }
 
+    console.log('[AUTH_ROUTE] Verifying password...');
     const user = verifyPassword(email, password);
     if (!user) {
+      console.log('[AUTH_ROUTE] Invalid credentials');
       return res.status(401).json({
         error: 'Invalid email or password'
       });
     }
 
+    console.log('[AUTH_ROUTE] Password verified, generating token');
     const token = generateToken(user.id);
 
     res.json({
@@ -67,6 +82,7 @@ router.post('/login', (req, res) => {
       }
     });
   } catch (error) {
+    console.error('[AUTH_ROUTE] Login error:', error.message);
     res.status(400).json({
       error: error.message
     });
