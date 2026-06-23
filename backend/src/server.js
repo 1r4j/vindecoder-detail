@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 import { initializeDatabase } from './db.js';
 
 import authRoutes from './routes/auth.js';
+import oauthRoutes from './routes/oauth.js';
 import vinRoutes from './routes/vin.js';
 import servicesRoutes from './routes/services.js';
 import invoicesRoutes from './routes/invoices.js';
@@ -43,6 +44,9 @@ app.get('/', (req, res) => {
 
 // Auth routes (public)
 app.use('/api/auth', authRoutes);
+
+// OAuth routes (public)
+app.use('/api/oauth', oauthRoutes);
 
 // Protected routes (require authentication)
 app.use('/api/vehicles', authMiddleware, vinRoutes);

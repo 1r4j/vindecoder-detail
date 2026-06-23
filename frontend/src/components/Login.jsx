@@ -1,5 +1,6 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { loadGoogleSignIn, initializeGoogleButton, handleGoogleSignIn } from '../utils/oauth';
 
 export default function Login({ onSuccess }) {
   const { login, error, setError } = useAuth();
@@ -9,6 +10,30 @@ export default function Login({ onSuccess }) {
   const [showPassword, setShowPassword] = useState(false);
   const [isRegistering, setIsRegistering] = useState(false);
   const [name, setName] = useState('');
+  const [oauthLoading, setOauthLoading] = useState(false);
+
+  // Initialize Google Sign-In
+  useEffect(() => {
+    loadGoogleSignIn(() => {
+      try {
+        initializeGoogleButton('google-signin-button', async (response) => {
+          setOauthLoading(true);
+          try {
+            const result = await handleGoogleSignIn(response.user.id_token);
+            if (result.success) {
+              if (onSuccess) onSuccess();
+            }
+          } catch (err) {
+            setError(err.message || 'Google login failed');
+          } finally {
+            setOauthLoading(false);
+          }
+        });
+      } catch (err) {
+        console.error('Failed to initialize Google Sign-In:', err);
+      }
+    });
+  }, []);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -35,6 +60,60 @@ export default function Login({ onSuccess }) {
         </div>
 
         {error && <div className="error" style={{ marginBottom: '16px' }}>{error}</div>}
+
+        {/* Social Login Buttons */}
+        <div style={{ marginBottom: '24px' }}>
+          <p style={{ fontSize: '12px', color: 'var(--text-light)', marginBottom: '12px', textAlign: 'center' }}>
+            {isRegistering ? 'Create Account' : 'Sign In'} with
+          </p>
+
+          {/* Google Sign-In Button */}
+          <div style={{ marginBottom: '12px' }}>
+            <div id="google-signin-button" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}></div>
+          </div>
+
+          {/* Apple Sign-In Button */}
+          <button
+            type="button"
+            onClick={async () => {
+              setOauthLoading(true);
+              setError('Apple Sign-In coming soon');
+              setOauthLoading(false);
+            }}
+            disabled={oauthLoading}
+            style={{
+              width: '100%',
+              padding: '12px',
+              background: '#000',
+              color: 'white',
+              border: 'none',
+              borderRadius: '8px',
+              fontSize: '14px',
+              fontWeight: '600',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              opacity: 0.7,
+              marginBottom: '24px'
+            }}
+          >
+            🍎 Continue with Apple (Coming Soon)
+          </button>
+
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            marginBottom: '24px',
+            opacity: 0.5
+          }}>
+            <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+            <span style={{ fontSize: '12px', color: 'var(--text-light)' }}>or</span>
+            <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+          </div>
+        </div>
 
         <form onSubmit={handleSubmit}>
           {isRegistering && (

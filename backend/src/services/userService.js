@@ -20,6 +20,9 @@ export function createUser(email, password, name) {
       email: email.toLowerCase(),
       password: hashedPassword,
       name: name || email.split('@')[0],
+      oauthId: null,
+      oauthProvider: null,
+      profilePicture: null,
       createdAt: new Date().toISOString(),
       businessSettings: {
         businessName: `${name || 'Business'}`,
