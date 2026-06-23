@@ -1,4 +1,12 @@
+import { useAuth } from '../context/AuthContext';
+
 export default function Navigation({ currentPage, setCurrentPage }) {
+  const { user, logout } = useAuth();
+
+  const handleLogout = async () => {
+    await logout();
+  };
+
   return (
     <nav className="navigation">
       <div className="nav-container">
@@ -28,6 +36,24 @@ export default function Navigation({ currentPage, setCurrentPage }) {
           >
             Settings
           </button>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginLeft: 'auto' }}>
+          {user && (
+            <>
+              <span style={{ fontSize: '13px', color: 'var(--text-light)', whiteSpace: 'nowrap' }}>
+                👤 {user.name || user.email}
+              </span>
+              <button
+                className="nav-button"
+                onClick={handleLogout}
+                title="Logout"
+                style={{ padding: '8px 12px', fontSize: '12px' }}
+              >
+                Logout
+              </button>
+            </>
+          )}
         </div>
       </div>
     </nav>

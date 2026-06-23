@@ -4,11 +4,13 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import { initializeDatabase } from './db.js';
 
+import authRoutes from './routes/auth.js';
 import vinRoutes from './routes/vin.js';
 import servicesRoutes from './routes/services.js';
 import invoicesRoutes from './routes/invoices.js';
 import customersRoutes from './routes/customers.js';
 import settingsRoutes from './routes/settings.js';
+import { authMiddleware } from './middleware/auth.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -29,6 +31,7 @@ app.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       health: '/api/health',
+      auth: '/api/auth (register, login, logout)',
       vehicles: '/api/vehicles',
       services: '/api/services',
       invoices: '/api/invoices',
@@ -38,11 +41,17 @@ app.get('/', (req, res) => {
   });
 });
 
-app.use('/api/vehicles', vinRoutes);
+// Auth routes (public)
+app.use('/api/auth', authRoutes);
+
+// Protected routes (require authentication)
+app.use('/api/vehicles', authMiddleware, vinRoutes);
+app.use('/api/invoices', authMiddleware, invoicesRoutes);
+app.use('/api/customers', authMiddleware, customersRoutes);
+app.use('/api/settings', authMiddleware, settingsRoutes);
+
+// Services available to all (no auth required)
 app.use('/api/services', servicesRoutes);
-app.use('/api/invoices', invoicesRoutes);
-app.use('/api/customers', customersRoutes);
-app.use('/api/settings', settingsRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });

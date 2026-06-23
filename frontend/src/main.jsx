@@ -2,6 +2,7 @@ import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
 import './index.css'
+import { AuthProvider } from './context/AuthContext'
 import { registerServiceWorker, requestPersistentStorage } from './utils/service-worker-register'
 import { setupMobileOptimizations, setupTouchOptimizations, optimizeFormForMobile } from './utils/mobile-optimizations'
 
@@ -24,6 +25,8 @@ if (document.readyState === 'loading') {
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <App />
+    <AuthProvider>
+      <App />
+    </AuthProvider>
   </React.StrictMode>,
 )

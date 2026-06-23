@@ -5,10 +5,13 @@ import InvoiceForm from './components/InvoiceForm';
 import InvoiceHistory from './components/InvoiceHistory';
 import BusinessSettings from './components/BusinessSettings';
 import Navigation from './components/Navigation';
+import Login from './components/Login';
+import { useAuth } from './context/AuthContext';
 
 function App() {
   const [currentPage, setCurrentPage] = useState('decoder');
   const [selectedVehicle, setSelectedVehicle] = useState(null);
+  const { isAuthenticated, loading } = useAuth();
 
   const handleVehicleSelected = (vehicle) => {
     setSelectedVehicle(vehicle);
@@ -18,6 +21,27 @@ function App() {
   const handleInvoiceCreated = (invoice) => {
     setCurrentPage('history');
   };
+
+  if (loading) {
+    return (
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        minHeight: '100vh',
+        background: 'linear-gradient(135deg, #F8FAFC 0%, #E2E8F0 100%)'
+      }}>
+        <div style={{ textAlign: 'center' }}>
+          <span className="loading" style={{ transform: 'scale(2)' }}></span>
+          <p style={{ marginTop: '16px', color: 'var(--text-light)' }}>Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Login onSuccess={() => {}} />;
+  }
 
   return (
     <div className="app">

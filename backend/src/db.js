@@ -9,6 +9,7 @@ const dataFile = path.join(dataDir, 'data.json');
 // Simple JSON-based database implementation
 class SimpleDB {
   constructor() {
+    this.users = [];
     this.vehicles = [];
     this.services = [];
     this.invoices = [];
@@ -21,6 +22,7 @@ class SimpleDB {
     try {
       if (fs.existsSync(dataFile)) {
         const data = JSON.parse(fs.readFileSync(dataFile, 'utf-8'));
+        this.users = data.users || [];
         this.vehicles = data.vehicles || [];
         this.services = data.services || [];
         this.invoices = data.invoices || [];
@@ -38,6 +40,7 @@ class SimpleDB {
         fs.mkdirSync(dataDir, { recursive: true });
       }
       fs.writeFileSync(dataFile, JSON.stringify({
+        users: this.users,
         vehicles: this.vehicles,
         services: this.services,
         invoices: this.invoices,

@@ -13,6 +13,7 @@ const generateInvoiceNumber = () => {
 router.post('/', (req, res) => {
   try {
     const { customerId, vin, invoiceDate, serviceDate, items, subtotal, tax, discount, total, notes } = req.body;
+    const userId = req.userId;
 
     if (!customerId || !vin || !items || items.length === 0) {
       return res.status(400).json({
@@ -21,12 +22,10 @@ router.post('/', (req, res) => {
     }
 
     const invoiceNumber = generateInvoiceNumber();
-    const stmt = db.prepare(`
-      INSERT INTO invoices (invoiceNumber, customerId, vin, invoiceDate, serviceDate, subtotal, tax, discount, total, status, notes, items)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    const result = stmt.run(
+    const invoiceId = Math.max(0, ...db.invoices.map(i => i.id)) + 1;
+    const invoice = {
+      id: invoiceId,
+      userId,
       invoiceNumber,
       customerId,
       vin,
@@ -36,12 +35,14 @@ router.post('/', (req, res) => {
       tax,
       discount,
       total,
-      'pending',
-      notes || '',
-      JSON.stringify(items)
-    );
+      status: 'pending',
+      notes: notes || '',
+      items: items,
+      createdAt: new Date().toISOString()
+    };
 
-    const invoice = db.prepare('SELECT * FROM invoices WHERE id = ?').get(result.lastID);
+    db.invoices.push(invoice);
+    db.save();
 
     res.status(201).json({
       success: true,
@@ -59,18 +60,17 @@ router.get('/', (req, res) => {
     const limit = parseInt(req.query.limit) || 100;
     const offset = parseInt(req.query.offset) || 0;
     const status = req.query.status || null;
+    const userId = req.userId;
 
-    let invoices;
+    let invoices = db.invoices.filter(i => i.userId === userId);
+
     if (status) {
-      invoices = db.prepare('SELECT * FROM invoices WHERE status = ? ORDER BY invoiceDate DESC LIMIT ? OFFSET ?').all(status, limit, offset);
-    } else {
-      invoices = db.prepare('SELECT * FROM invoices ORDER BY invoiceDate DESC LIMIT ? OFFSET ?').all(limit, offset);
+      invoices = invoices.filter(i => i.status === status);
     }
 
-    invoices = invoices.map(inv => ({
-      ...inv,
-      items: typeof inv.items === 'string' ? JSON.parse(inv.items) : inv.items
-    }));
+    invoices = invoices
+      .sort((a, b) => new Date(b.invoiceDate) - new Date(a.invoiceDate))
+      .slice(offset, offset + limit);
 
     res.json({
       success: true,

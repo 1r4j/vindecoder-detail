@@ -6,6 +6,7 @@ const router = express.Router();
 router.post('/', (req, res) => {
   try {
     const { name, email, phone, address, city, state, zipCode } = req.body;
+    const userId = req.userId;
 
     if (!name) {
       return res.status(400).json({
@@ -13,14 +14,22 @@ router.post('/', (req, res) => {
       });
     }
 
-    const stmt = db.prepare(`
-      INSERT INTO customers (name, email, phone, address, city, state, zipCode)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
-    `);
+    const customerId = Math.max(0, ...db.customers.map(c => c.id)) + 1;
+    const customer = {
+      id: customerId,
+      userId,
+      name,
+      email: email || '',
+      phone: phone || '',
+      address: address || '',
+      city: city || '',
+      state: state || '',
+      zipCode: zipCode || '',
+      createdAt: new Date().toISOString()
+    };
 
-    const result = stmt.run(name, email || '', phone || '', address || '', city || '', state || '', zipCode || '');
-
-    const customer = db.prepare('SELECT * FROM customers WHERE id = ?').get(result.lastID);
+    db.customers.push(customer);
+    db.save();
 
     res.status(201).json({
       success: true,
@@ -35,7 +44,10 @@ router.post('/', (req, res) => {
 
 router.get('/', (req, res) => {
   try {
-    const customers = db.prepare('SELECT * FROM customers ORDER BY name').all();
+    const userId = req.userId;
+    const customers = db.customers
+      .filter(c => c.userId === userId)
+      .sort((a, b) => a.name.localeCompare(b.name));
 
     res.json({
       success: true,
