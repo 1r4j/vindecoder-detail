@@ -120,136 +120,142 @@ export function generatePDF({
   addLine();
   yPosition += 8;
 
-  // SERVICE DETAILS - Simple and Clean
-  doc.setFontSize(12);
+  // ===== SERVICE DETAILS SECTION =====
+  doc.setFontSize(13);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(0, 0, 0);
   doc.text('SERVICE DETAILS', margin, yPosition);
   yPosition += 8;
 
-  // Column positions for clean table
-  const serviceCol = margin;
-  const qtyCol = pageWidth - margin - 85;
-  const priceCol = pageWidth - margin - 55;
-  const totalCol = pageWidth - margin - 5;
+  // Define table structure - clean and spacious
+  const tableLeft = margin;
+  const tableRight = pageWidth - margin;
+  const tableWidth = tableRight - tableLeft;
 
-  // Table header with clean design
-  doc.setFontSize(9);
+  // Column positions (percentages)
+  const col1X = tableLeft;                    // Service (50%)
+  const col2X = tableLeft + (tableWidth * 0.50);  // Qty (12%)
+  const col3X = tableLeft + (tableWidth * 0.62);  // Unit Price (25%)
+  const col4X = tableRight - 20;               // Total (13%, right aligned)
+
+  // Header row - BOLD AND CLEAR
+  doc.setFontSize(10);
   doc.setFont(undefined, 'bold');
-  doc.setTextColor(79, 70, 229);
-  doc.text('Service', serviceCol, yPosition);
-  doc.text('Qty', qtyCol, yPosition);
-  doc.text('Unit Price', priceCol, yPosition);
-  doc.text('Total', totalCol, yPosition, { align: 'right' });
+  doc.setTextColor(0, 0, 0);
+  doc.text('Service', col1X, yPosition);
+  doc.text('Qty', col2X, yPosition);
+  doc.text('Unit Price', col3X, yPosition);
+  doc.text('Total', col4X, yPosition, { align: 'right' });
 
+  // Header underline
   yPosition += 1;
-  doc.setDrawColor(79, 70, 229);
-  doc.setLineWidth(0.3);
-  doc.line(margin, yPosition, pageWidth - margin, yPosition);
-  yPosition += 6;
+  doc.setDrawColor(100, 100, 100);
+  doc.setLineWidth(0.5);
+  doc.line(tableLeft, yPosition, tableRight, yPosition);
+  yPosition += 7;
 
-  // Service lines - SIMPLE AND CLEAR
+  // Service rows - CLEAR AND READABLE
   doc.setFontSize(9);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(0, 0, 0);
 
-  services.forEach((service) => {
-    // Check if need new page
-    if (yPosition > pageHeight - 50) {
+  services.forEach((service, index) => {
+    // Page break check
+    if (yPosition > pageHeight - 60) {
       doc.addPage();
       yPosition = margin;
-    }
-
-    // Service name and description on same line for clarity
-    let serviceLabel = service.name;
-    if (service.description) {
-      serviceLabel += ` (${service.description})`;
     }
 
     const qty = service.quantity;
     const unitPrice = (service.defaultPrice || 0).toFixed(2);
     const lineTotal = ((service.defaultPrice || 0) * qty).toFixed(2);
 
-    // Service name with wrapping
-    const serviceWidth = qtyCol - serviceCol - 5;
-    const serviceLines = doc.splitTextToSize(serviceLabel, serviceWidth);
-    doc.text(serviceLines, serviceCol, yPosition);
+    // Service name line
+    doc.text(service.name, col1X, yPosition);
+    doc.text(qty.toString(), col2X, yPosition);
+    doc.text(`${settings?.currency || '$'}${unitPrice}`, col3X, yPosition);
+    doc.text(`${settings?.currency || '$'}${lineTotal}`, col4X, yPosition, { align: 'right' });
 
-    const lineHeight = serviceLines.length * 4;
+    yPosition += 6;
 
-    // Numbers on the right
-    doc.setFont(undefined, 'normal');
-    doc.text(qty.toString(), qtyCol, yPosition);
-    doc.text(`${settings?.currency || '$'}${unitPrice}`, priceCol, yPosition);
-    doc.text(`${settings?.currency || '$'}${lineTotal}`, totalCol, yPosition, { align: 'right' });
+    // Description on next line if exists (smaller, lighter)
+    if (service.description) {
+      doc.setFontSize(8);
+      doc.setTextColor(120, 120, 120);
+      doc.text(service.description, col1X + 3, yPosition);
+      yPosition += 4;
+      doc.setFontSize(9);
+      doc.setTextColor(0, 0, 0);
+    }
 
-    yPosition += Math.max(lineHeight, 6) + 2;
-
-    // Light separator line between items
-    doc.setDrawColor(220, 220, 220);
+    // Light separator between items
+    doc.setDrawColor(200, 200, 200);
     doc.setLineWidth(0.1);
-    doc.line(margin, yPosition - 1, pageWidth - margin, yPosition - 1);
+    doc.line(tableLeft, yPosition, tableRight, yPosition);
+    yPosition += 3;
   });
 
-  yPosition += 6;
+  // Add spacing before summary
+  yPosition += 3;
 
-  // SUMMARY - Clean and Simple
-  const summaryLabelX = pageWidth - margin - 85;
-  const summaryValueX = pageWidth - margin - 5;
+  // ===== SUMMARY SECTION =====
+  // Summary label and value positions
+  const summaryLabelX = pageWidth - margin - 70;
+  const summaryValueX = pageWidth - margin - 2;
+  const summaryBoxWidth = 70;
 
+  // Subtotal
   doc.setFontSize(9);
   doc.setFont(undefined, 'normal');
-  doc.setTextColor(0, 0, 0);
-
-  // Subtotal line
+  doc.setTextColor(80, 80, 80);
   doc.text('Subtotal:', summaryLabelX, yPosition);
+  doc.setTextColor(0, 0, 0);
   doc.text(`${settings?.currency || '$'}${subtotal.toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
-  yPosition += 5;
-
-  // Tax line
-  doc.text(`Tax (${settings?.taxRate || 8}%):`, summaryLabelX, yPosition);
-  doc.text(`${settings?.currency || '$'}${tax.toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
   yPosition += 6;
 
-  // Total line with highlight
-  doc.setLineWidth(0.3);
-  doc.setDrawColor(79, 70, 229);
-  doc.line(summaryLabelX, yPosition - 1, summaryValueX, yPosition - 1);
+  // Tax
+  doc.setTextColor(80, 80, 80);
+  doc.text(`Tax (${settings?.taxRate || 8}%):`, summaryLabelX, yPosition);
+  doc.setTextColor(0, 0, 0);
+  doc.text(`${settings?.currency || '$'}${tax.toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
+  yPosition += 8;
+
+  // Total - HIGHLIGHTED
+  doc.setLineWidth(0.5);
+  doc.setDrawColor(50, 50, 50);
+  doc.line(summaryLabelX, yPosition - 1.5, summaryValueX, yPosition - 1.5);
 
   doc.setFont(undefined, 'bold');
   doc.setFontSize(11);
-  doc.setTextColor(79, 70, 229);
-  doc.text('TOTAL:', summaryLabelX, yPosition + 4);
-  doc.text(`${settings?.currency || '$'}${total.toFixed(2)}`, summaryValueX, yPosition + 4, { align: 'right' });
-
   doc.setTextColor(0, 0, 0);
-  doc.setFont(undefined, 'normal');
+  doc.text('TOTAL:', summaryLabelX, yPosition + 3);
+  doc.text(`${settings?.currency || '$'}${total.toFixed(2)}`, summaryValueX, yPosition + 3, { align: 'right' });
+
   yPosition += 12;
 
-  // Notes
+  // ===== NOTES SECTION =====
   if (notes) {
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont(undefined, 'bold');
+    doc.setTextColor(0, 0, 0);
     doc.text('NOTES:', margin, yPosition);
-    yPosition += 6;
+    yPosition += 5;
 
     doc.setFont(undefined, 'normal');
-    doc.setFontSize(9);
+    doc.setFontSize(8);
+    doc.setTextColor(60, 60, 60);
     const notesLines = doc.splitTextToSize(notes, pageWidth - margin * 2);
     doc.text(notesLines, margin, yPosition);
-    yPosition += notesLines.length * 5 + 4;
+    yPosition += notesLines.length * 4 + 6;
   }
 
-  // Footer
-  yPosition = pageHeight - 15;
-  doc.setFontSize(9);
-  doc.setTextColor(150, 150, 150);
-  doc.text(
-    `Payment Status: PENDING | Due Date: ${dueDate.toLocaleDateString()}`,
-    margin,
-    yPosition
-  );
-  doc.text('Thank you for your business!', pageWidth / 2, yPosition, { align: 'center' });
+  // ===== FOOTER =====
+  const footerY = pageHeight - 12;
+  doc.setFontSize(8);
+  doc.setTextColor(120, 120, 120);
+  doc.setFont(undefined, 'normal');
+  doc.text(`Payment Status: PENDING | Due Date: ${dueDate.toLocaleDateString()}`, margin, footerY);
+  doc.text('Thank you for your business!', pageWidth / 2, footerY, { align: 'center' });
 
   // Save
   const fileName = `Invoice-${new Date().toISOString().split('T')[0]}.pdf`;
