@@ -95,8 +95,11 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
       (sum, s) => sum + ((s.defaultPrice || 0) * (s.quantity || 1)),
       0
     );
-    const taxRate = (settings?.taxRate || 8) / 100;
+    // Use tax rate from settings, fallback to 8% if not set
+    const taxRateValue = settings?.taxRate !== undefined && settings?.taxRate !== null ? settings.taxRate : 8;
+    const taxRate = taxRateValue / 100;
     const tax = subtotal * taxRate;
+    console.log('Tax calculation:', { subtotal, taxRateValue, tax });
     return { subtotal, tax, total: subtotal + tax };
   };
 
@@ -131,6 +134,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
 
       const { subtotal, tax } = calculateTotals();
       const total = subtotal + tax;
+      const appliedTaxRate = settings?.taxRate !== undefined && settings?.taxRate !== null ? settings.taxRate : 8;
 
       const invoiceData = {
         customerId: parseInt(customerId),
@@ -151,6 +155,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
         })),
         subtotal: Math.round(subtotal * 100) / 100,
         tax: Math.round(tax * 100) / 100,
+        taxRate: appliedTaxRate,
         discount: 0,
         total: Math.round(total * 100) / 100,
         notes: invoiceNotes
