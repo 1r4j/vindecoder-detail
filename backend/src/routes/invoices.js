@@ -145,14 +145,28 @@ router.patch('/:id', (req, res) => {
 router.delete('/:id', (req, res) => {
   try {
     const { id } = req.params;
-    const stmt = db.prepare('DELETE FROM invoices WHERE id = ?');
-    stmt.run(parseInt(id));
+    const invoiceId = parseInt(id);
+
+    // Find the invoice to delete
+    const index = db.invoices.findIndex(inv => inv.id === invoiceId);
+    if (index === -1) {
+      return res.status(404).json({
+        error: 'Invoice not found'
+      });
+    }
+
+    // Remove the invoice from the array
+    db.invoices.splice(index, 1);
+
+    // Save the database
+    db.save();
 
     res.json({
       success: true,
-      message: 'Invoice deleted'
+      message: 'Invoice deleted successfully'
     });
   } catch (error) {
+    console.error('Delete invoice error:', error);
     res.status(500).json({
       error: error.message
     });
