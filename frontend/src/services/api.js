@@ -22,7 +22,8 @@ export const invoiceService = {
   getById: (id) => api.get(`/invoices/${id}`),
   update: (id, data) => api.patch(`/invoices/${id}`, data),
   delete: (id) => api.delete(`/invoices/${id}`),
-  search: (query) => api.get('/invoices/search', { params: { q: query } })
+  search: (query) => api.get('/invoices/search', { params: { q: query } }),
+  consolidate: (data) => api.post('/invoices/consolidate', data)
 };
 
 export const customerService = {

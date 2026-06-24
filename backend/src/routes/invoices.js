@@ -159,4 +159,113 @@ router.delete('/:id', (req, res) => {
   }
 });
 
+// Consolidate multiple invoices for a customer
+router.post('/consolidate', (req, res) => {
+  try {
+    const { customerId, invoiceIds, notes } = req.body;
+    const userId = req.userId;
+
+    if (!customerId || !invoiceIds || invoiceIds.length < 2) {
+      return res.status(400).json({
+        error: 'Please select at least 2 invoices to consolidate'
+      });
+    }
+
+    // Get all invoices to consolidate
+    const invoicesToConsolidate = db.invoices.filter(inv =>
+      invoiceIds.includes(inv.id) && inv.customerId === parseInt(customerId)
+    );
+
+    if (invoicesToConsolidate.length < 2) {
+      return res.status(400).json({
+        error: 'Could not find enough valid invoices to consolidate'
+      });
+    }
+
+    // Combine all items from invoices
+    const combinedItems = [];
+    let totalSubtotal = 0;
+    let totalTax = 0;
+    let vehicleInfo = {};
+
+    invoicesToConsolidate.forEach(inv => {
+      // Add items from this invoice (with original invoice reference)
+      (inv.items || []).forEach(item => {
+        combinedItems.push({
+          ...item,
+          sourceInvoice: inv.invoiceNumber
+        });
+      });
+
+      totalSubtotal += inv.subtotal;
+      totalTax += inv.tax;
+
+      // Use first invoice's vehicle info
+      if (!vehicleInfo.vin) {
+        vehicleInfo = {
+          vin: inv.vin,
+          year: inv.year,
+          make: inv.make,
+          model: inv.model,
+          color: inv.color,
+          bodyType: inv.bodyType
+        };
+      }
+    });
+
+    const consolidatedTotal = totalSubtotal + totalTax;
+    const taxRate = invoicesToConsolidate[0].taxRate || 8;
+
+    // Create new consolidated invoice
+    const invoiceNumber = generateInvoiceNumber();
+    const invoiceId = Math.max(0, ...db.invoices.map(i => i.id)) + 1;
+
+    const consolidatedInvoice = {
+      id: invoiceId,
+      userId,
+      invoiceNumber,
+      customerId: parseInt(customerId),
+      vin: vehicleInfo.vin,
+      year: vehicleInfo.year,
+      make: vehicleInfo.make,
+      model: vehicleInfo.model,
+      color: vehicleInfo.color,
+      bodyType: vehicleInfo.bodyType,
+      invoiceDate: new Date().toISOString().split('T')[0],
+      serviceDate: new Date().toISOString().split('T')[0],
+      subtotal: Math.round(totalSubtotal * 100) / 100,
+      tax: Math.round(totalTax * 100) / 100,
+      taxRate,
+      discount: 0,
+      total: Math.round(consolidatedTotal * 100) / 100,
+      status: 'pending',
+      notes: notes || `Consolidated from invoices: ${invoicesToConsolidate.map(i => i.invoiceNumber).join(', ')}`,
+      items: combinedItems,
+      consolidatedFrom: invoiceIds,
+      createdAt: new Date().toISOString()
+    };
+
+    db.invoices.push(consolidatedInvoice);
+
+    // Mark original invoices as consolidated
+    invoicesToConsolidate.forEach(inv => {
+      inv.status = 'consolidated';
+      inv.consolidatedIntoId = invoiceId;
+    });
+
+    db.save();
+
+    res.status(201).json({
+      success: true,
+      data: consolidatedInvoice,
+      message: `Created consolidated invoice from ${invoicesToConsolidate.length} invoices`
+    });
+  } catch (error) {
+    console.error('Consolidate error:', error);
+    res.status(500).json({
+      error: error.message
+    });
+  }
+});
+
 export default router;

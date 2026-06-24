@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { invoiceService, customerService, settingsService } from '../services/api';
 import { generatePDF } from '../utils/pdfGenerator';
+import ConsolidateInvoices from './ConsolidateInvoices';
 
 export default function InvoiceHistory() {
   const [invoices, setInvoices] = useState([]);
@@ -11,6 +12,8 @@ export default function InvoiceHistory() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
   const [exportingId, setExportingId] = useState(null);
+  const [showConsolidate, setShowConsolidate] = useState(false);
+  const [successMessage, setSuccessMessage] = useState('');
 
   useEffect(() => {
     loadData();
@@ -127,7 +130,19 @@ export default function InvoiceHistory() {
       <div className="content-card">
         {error && <div className="error">{error}</div>}
 
-        <div style={{ marginBottom: '16px', display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '12px', alignItems: 'center' }}>
+        {successMessage && (
+          <div style={{
+            backgroundColor: '#efe',
+            color: '#3c3',
+            padding: '12px',
+            borderRadius: '6px',
+            marginBottom: '16px'
+          }}>
+            {successMessage}
+          </div>
+        )}
+
+        <div style={{ marginBottom: '16px', display: 'grid', gridTemplateColumns: 'auto 1fr auto', gap: '12px', alignItems: 'center' }}>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
@@ -146,6 +161,22 @@ export default function InvoiceHistory() {
             onChange={(e) => setSearchQuery(e.target.value)}
             style={{ width: '100%' }}
           />
+
+          <button
+            onClick={() => setShowConsolidate(true)}
+            style={{
+              padding: '10px 16px',
+              borderRadius: '6px',
+              border: 'none',
+              background: 'var(--primary)',
+              color: 'white',
+              cursor: 'pointer',
+              fontWeight: '500',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            📋 Consolidate
+          </button>
         </div>
 
         {loading ? (
@@ -266,6 +297,18 @@ export default function InvoiceHistory() {
           </div>
         </div>
       </div>
+
+      {showConsolidate && (
+        <ConsolidateInvoices
+          onClose={() => setShowConsolidate(false)}
+          onSuccess={(newInvoice) => {
+            setShowConsolidate(false);
+            setSuccessMessage(`✅ Successfully created consolidated invoice ${newInvoice.invoiceNumber}`);
+            setTimeout(() => setSuccessMessage(''), 5000);
+            loadData();
+          }}
+        />
+      )}
     </div>
   );
 }
