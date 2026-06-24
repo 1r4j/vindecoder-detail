@@ -162,32 +162,70 @@ export default function ConsolidateInvoices({ onClose, onSuccess }) {
             <label style={{ display: 'block', marginBottom: '12px', fontWeight: '500' }}>
               Select Invoices to Consolidate
             </label>
-            <div style={{ border: '1px solid var(--border)', borderRadius: '6px', padding: '12px' }}>
-              {customerInvoices.map(invoice => (
+            <div style={{ border: '1px solid var(--border)', borderRadius: '6px', overflow: 'hidden' }}>
+              {customerInvoices.map((invoice, index) => (
                 <div
                   key={invoice.id}
                   style={{
                     display: 'flex',
-                    alignItems: 'center',
-                    padding: '12px',
-                    borderBottom: '1px solid var(--light)',
+                    alignItems: 'flex-start',
+                    padding: '16px',
+                    borderBottom: index < customerInvoices.length - 1 ? '1px solid var(--border)' : 'none',
                     cursor: 'pointer',
-                    backgroundColor: selectedInvoices.includes(invoice.id) ? 'var(--light)' : 'white',
-                    borderRadius: '4px',
-                    marginBottom: '8px'
+                    backgroundColor: selectedInvoices.includes(invoice.id) ? '#f0f8f4' : 'white',
+                    transition: 'background-color 0.2s'
                   }}
                   onClick={() => toggleInvoiceSelection(invoice.id)}
                 >
-                  <input
-                    type="checkbox"
-                    checked={selectedInvoices.includes(invoice.id)}
-                    onChange={() => toggleInvoiceSelection(invoice.id)}
-                    style={{ marginRight: '12px', cursor: 'pointer' }}
-                  />
+                  {/* Custom Checkbox with Green Checkmark */}
+                  <div
+                    style={{
+                      width: '24px',
+                      height: '24px',
+                      minWidth: '24px',
+                      borderRadius: '4px',
+                      border: selectedInvoices.includes(invoice.id) ? 'none' : '2px solid var(--border)',
+                      backgroundColor: selectedInvoices.includes(invoice.id) ? '#4CAF50' : 'white',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      marginRight: '16px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s'
+                    }}
+                  >
+                    {selectedInvoices.includes(invoice.id) && (
+                      <span style={{ color: 'white', fontSize: '16px', fontWeight: 'bold' }}>✓</span>
+                    )}
+                  </div>
+
+                  {/* Invoice Details */}
                   <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: '600' }}>{invoice.invoiceNumber}</div>
-                    <div style={{ fontSize: '12px', color: 'var(--text-light)' }}>
-                      {new Date(invoice.invoiceDate).toLocaleDateString()} • Total: ${invoice.total.toFixed(2)}
+                    {/* Invoice Number and Date */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '8px' }}>
+                      <div style={{ fontWeight: '600', fontSize: '14px' }}>
+                        {invoice.invoiceNumber}
+                      </div>
+                      <div style={{ fontSize: '13px', color: 'var(--text-light)' }}>
+                        {new Date(invoice.invoiceDate).toLocaleDateString()}
+                      </div>
+                    </div>
+
+                    {/* Service Names */}
+                    <div style={{ marginBottom: '8px' }}>
+                      {invoice.items && invoice.items.length > 0 ? (
+                        <div style={{ fontSize: '13px', color: 'var(--text)' }}>
+                          <span style={{ color: 'var(--text-light)', fontWeight: '500' }}>Services:</span>{' '}
+                          {invoice.items.map(item => item.name).join(', ')}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: '13px', color: 'var(--text-light)' }}>No services</div>
+                      )}
+                    </div>
+
+                    {/* Total */}
+                    <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--primary)' }}>
+                      Total: ${invoice.total.toFixed(2)}
                     </div>
                   </div>
                 </div>
