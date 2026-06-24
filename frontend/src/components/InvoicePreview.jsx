@@ -32,7 +32,8 @@ export default function InvoicePreview({
         subtotal,
         tax,
         total,
-        settings
+        settings,
+        invoiceNumber
       });
     } catch (err) {
       console.error('Failed to export PDF:', err);
