@@ -399,6 +399,22 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
     }
 
+    // Detect if image has inverted contrast (light text on dark background)
+    // Calculate average brightness
+    let sum = 0;
+    for (let i = 0; i < gray.length; i++) {
+      sum += gray[i];
+    }
+    const avgBrightness = sum / gray.length;
+    const isInvertedContrast = avgBrightness < 100; // Dark image = inverted contrast
+
+    // Invert if needed (light text on dark background)
+    if (isInvertedContrast) {
+      for (let i = 0; i < gray.length; i++) {
+        gray[i] = 255 - gray[i];
+      }
+    }
+
     // Adaptive thresholding (local contrast enhancement)
     const blockSize = 15;
     const halfBlock = Math.floor(blockSize / 2);
@@ -408,38 +424,83 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
 
-        // Calculate local mean
+        // Calculate local mean and standard deviation
         let sum = 0;
+        let sumSq = 0;
         let count = 0;
 
         for (let dy = -halfBlock; dy <= halfBlock; dy++) {
           for (let dx = -halfBlock; dx <= halfBlock; dx++) {
             const ny = Math.min(Math.max(y + dy, 0), height - 1);
             const nx = Math.min(Math.max(x + dx, 0), width - 1);
-            sum += gray[ny * width + nx];
+            const val = gray[ny * width + nx];
+            sum += val;
+            sumSq += val * val;
             count++;
           }
         }
 
         const localMean = sum / count;
-        const localThreshold = localMean * 0.95; // Slightly lower threshold for dark text
+        const localStdDev = Math.sqrt(sumSq / count - (localMean * localMean));
+
+        // Adaptive threshold using mean and standard deviation
+        const localThreshold = localMean - localStdDev * 0.5;
 
         // Apply adaptive threshold
         threshold[idx] = gray[idx] < localThreshold ? 0 : 255;
       }
     }
 
+    // Morphological operations: dilate then erode to connect broken characters
+    const morphKernel = 3;
+    const dilated = new Uint8ClampedArray(threshold);
+
+    // Dilation
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        if (threshold[idx] === 255) {
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const ny = Math.min(Math.max(y + dy, 0), height - 1);
+              const nx = Math.min(Math.max(x + dx, 0), width - 1);
+              dilated[ny * width + nx] = 255;
+            }
+          }
+        }
+      }
+    }
+
+    // Erosion
+    const eroded = new Uint8ClampedArray(dilated);
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+        let hasBlack = false;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dilated[(y + dy) * width + (x + dx)] === 0) {
+              hasBlack = true;
+              break;
+            }
+          }
+          if (hasBlack) break;
+        }
+        eroded[idx] = hasBlack ? 0 : 255;
+      }
+    }
+
     // Apply contrast stretching
     let minVal = 255, maxVal = 0;
-    for (let i = 0; i < threshold.length; i++) {
-      if (threshold[i] < minVal) minVal = threshold[i];
-      if (threshold[i] > maxVal) maxVal = threshold[i];
+    for (let i = 0; i < eroded.length; i++) {
+      if (eroded[i] < minVal) minVal = eroded[i];
+      if (eroded[i] > maxVal) maxVal = eroded[i];
     }
 
     // Write back to image data
     for (let i = 0; i < data.length; i += 4) {
       const idx = i / 4;
-      const val = Math.round(((threshold[idx] - minVal) / (maxVal - minVal + 1)) * 255);
+      const val = maxVal === minVal ? 128 : Math.round(((eroded[idx] - minVal) / (maxVal - minVal)) * 255);
       data[i] = val;      // R
       data[i + 1] = val;  // G
       data[i + 2] = val;  // B
