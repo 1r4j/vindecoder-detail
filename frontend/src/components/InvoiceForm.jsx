@@ -26,6 +26,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
 
   const [preview, setPreview] = useState(false);
   const [nextInvoiceNumber, setNextInvoiceNumber] = useState('INV-00001');
+  const [selectedTaxRate, setSelectedTaxRate] = useState(null);
 
   useEffect(() => {
     loadInitialData();
@@ -44,6 +45,16 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
       setCustomers(customersRes.data.data || []);
       const settingsData = settingsRes.data.data;
       setSettings(settingsData);
+
+      // Initialize tax rate selection
+      if (settingsData?.taxRates && Array.isArray(settingsData.taxRates) && settingsData.taxRates.length > 0) {
+        setSelectedTaxRate(settingsData.taxRates[0]);
+      } else if (settingsData?.taxRate) {
+        // Backward compatibility: if old taxRate format exists
+        setSelectedTaxRate({ name: 'Standard', rate: settingsData.taxRate });
+      } else {
+        setSelectedTaxRate({ name: 'Standard', rate: 8 });
+      }
 
       const invoices = invoicesRes.data.data || [];
       const prefix = settingsData?.invoicePrefix || 'INV';
@@ -95,11 +106,10 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
       (sum, s) => sum + ((s.defaultPrice || 0) * (s.quantity || 1)),
       0
     );
-    // Use tax rate from settings, fallback to 8% if not set
-    const taxRateValue = settings?.taxRate !== undefined && settings?.taxRate !== null ? settings.taxRate : 8;
+    // Use selected tax rate, fallback to 8% if not set
+    const taxRateValue = selectedTaxRate?.rate ?? 8;
     const taxRate = taxRateValue / 100;
     const tax = subtotal * taxRate;
-    console.log('Tax calculation:', { subtotal, taxRateValue, tax });
     return { subtotal, tax, total: subtotal + tax };
   };
 
@@ -134,7 +144,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
 
       const { subtotal, tax } = calculateTotals();
       const total = subtotal + tax;
-      const appliedTaxRate = settings?.taxRate !== undefined && settings?.taxRate !== null ? settings.taxRate : 8;
+      const appliedTaxRate = selectedTaxRate?.rate ?? 8;
 
       const invoiceData = {
         customerId: parseInt(customerId),
@@ -469,6 +479,24 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
                   </table>
 
                   <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid var(--border)' }}>
+                    <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Tax Rate</label>
+                    <select
+                      value={selectedTaxRate?.name || ''}
+                      onChange={(e) => {
+                        const selected = (settings?.taxRates || []).find(tr => tr.name === e.target.value);
+                        if (selected) setSelectedTaxRate(selected);
+                      }}
+                      style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid var(--border)', marginBottom: '12px', fontSize: '14px' }}
+                    >
+                      {(settings?.taxRates || [{ name: 'Standard', rate: 8 }]).map((taxRate, idx) => (
+                        <option key={idx} value={taxRate.name}>
+                          {taxRate.name} ({taxRate.rate}%)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div style={{ marginBottom: '24px', paddingBottom: '24px', borderBottom: '1px solid var(--border)' }}>
                     <label style={{ display: 'block', marginBottom: '8px', fontWeight: '500' }}>Notes</label>
                     <textarea
                       value={invoiceNotes}
@@ -484,7 +512,7 @@ export default function InvoiceForm({ vehicle, onInvoiceCreated }) {
                       <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{settings?.currency || '$'}{subtotal.toFixed(2)}</div>
                     </div>
                     <div>
-                      <div style={{ fontSize: '12px', color: 'var(--text-light)' }}>Tax ({settings?.taxRate || 8}%)</div>
+                      <div style={{ fontSize: '12px', color: 'var(--text-light)' }}>Tax ({selectedTaxRate?.rate || 8}%)</div>
                       <div style={{ fontSize: '20px', fontWeight: 'bold' }}>{settings?.currency || '$'}{tax.toFixed(2)}</div>
                     </div>
                     <div>

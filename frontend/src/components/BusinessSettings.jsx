@@ -14,10 +14,12 @@ export default function BusinessSettings() {
   const [zipCode, setZipCode] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [taxRate, setTaxRate] = useState('8');
+  const [taxRates, setTaxRates] = useState([{ name: 'Standard', rate: 8 }]);
   const [invoicePrefix, setInvoicePrefix] = useState('INV');
   const [paymentTerms, setPaymentTerms] = useState('14');
   const [currency, setCurrency] = useState('$');
+  const [newTaxRateName, setNewTaxRateName] = useState('');
+  const [newTaxRateValue, setNewTaxRateValue] = useState('0');
 
   useEffect(() => {
     loadSettings();
@@ -37,7 +39,16 @@ export default function BusinessSettings() {
       setZipCode(data?.zipCode || '');
       setPhone(data?.phone || '');
       setEmail(data?.email || '');
-      setTaxRate(String(data?.taxRate || 8));
+
+      // Handle backward compatibility: if taxRate exists (old format), convert to taxRates array
+      if (data?.taxRates && Array.isArray(data.taxRates)) {
+        setTaxRates(data.taxRates);
+      } else if (data?.taxRate) {
+        setTaxRates([{ name: 'Standard', rate: data.taxRate }]);
+      } else {
+        setTaxRates([{ name: 'Standard', rate: 8 }]);
+      }
+
       setInvoicePrefix(data?.invoicePrefix || 'INV');
       setPaymentTerms(String(data?.paymentTerms || 14));
       setCurrency(data?.currency || '$');
@@ -47,6 +58,51 @@ export default function BusinessSettings() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAddTaxRate = () => {
+    if (!newTaxRateName.trim() || newTaxRateValue === '') {
+      setError('Please enter tax rate name and value');
+      return;
+    }
+
+    const rateValue = parseFloat(newTaxRateValue);
+    if (isNaN(rateValue) || rateValue < 0 || rateValue > 100) {
+      setError('Tax rate must be between 0 and 100');
+      return;
+    }
+
+    // Check if name already exists
+    if (taxRates.some(t => t.name.toLowerCase() === newTaxRateName.toLowerCase())) {
+      setError('Tax rate name already exists');
+      return;
+    }
+
+    setTaxRates([...taxRates, { name: newTaxRateName, rate: rateValue }]);
+    setNewTaxRateName('');
+    setNewTaxRateValue('0');
+    setError('');
+  };
+
+  const handleRemoveTaxRate = (index) => {
+    if (taxRates.length === 1) {
+      setError('You must have at least one tax rate');
+      return;
+    }
+    setTaxRates(taxRates.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateTaxRate = (index, field, value) => {
+    const updated = [...taxRates];
+    if (field === 'rate') {
+      const rateValue = parseFloat(value);
+      if (!isNaN(rateValue) && rateValue >= 0 && rateValue <= 100) {
+        updated[index].rate = rateValue;
+      }
+    } else {
+      updated[index].name = value;
+    }
+    setTaxRates(updated);
   };
 
   const handleSubmit = async (e) => {
@@ -64,7 +120,7 @@ export default function BusinessSettings() {
         zipCode,
         phone,
         email,
-        taxRate: parseInt(taxRate),
+        taxRates,
         invoicePrefix,
         paymentTerms: parseInt(paymentTerms),
         currency
@@ -205,28 +261,100 @@ export default function BusinessSettings() {
                 </div>
               </div>
 
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Tax Rate (%)</label>
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Tax Rates</label>
+                <div style={{ backgroundColor: 'var(--light)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
+                  {taxRates.map((taxRate, index) => (
+                    <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', alignItems: 'center', marginBottom: index < taxRates.length - 1 ? '12px' : '0' }}>
+                      <input
+                        type="text"
+                        value={taxRate.name}
+                        onChange={(e) => handleUpdateTaxRate(index, 'name', e.target.value)}
+                        placeholder="Tax Rate Name"
+                        style={{ fontSize: '14px' }}
+                      />
+                      <input
+                        type="number"
+                        value={taxRate.rate}
+                        onChange={(e) => handleUpdateTaxRate(index, 'rate', e.target.value)}
+                        min="0"
+                        max="100"
+                        step="0.1"
+                        placeholder="Rate %"
+                        style={{ fontSize: '14px' }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveTaxRate(index)}
+                        disabled={taxRates.length === 1}
+                        style={{
+                          background: 'var(--danger)',
+                          color: 'white',
+                          border: 'none',
+                          borderRadius: '4px',
+                          padding: '6px 10px',
+                          cursor: taxRates.length === 1 ? 'not-allowed' : 'pointer',
+                          opacity: taxRates.length === 1 ? 0.5 : 1,
+                          fontSize: '12px',
+                          minHeight: 'auto'
+                        }}
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', marginBottom: '12px' }}>
+                  <input
+                    type="text"
+                    value={newTaxRateName}
+                    onChange={(e) => setNewTaxRateName(e.target.value)}
+                    placeholder="New tax rate name (e.g., Local, State)"
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddTaxRate()}
+                    style={{ fontSize: '14px' }}
+                  />
                   <input
                     type="number"
-                    value={taxRate}
-                    onChange={(e) => setTaxRate(e.target.value)}
+                    value={newTaxRateValue}
+                    onChange={(e) => setNewTaxRateValue(e.target.value)}
                     min="0"
                     max="100"
                     step="0.1"
+                    placeholder="Rate %"
+                    onKeyPress={(e) => e.key === 'Enter' && handleAddTaxRate()}
+                    style={{ fontSize: '14px' }}
                   />
+                  <button
+                    type="button"
+                    onClick={handleAddTaxRate}
+                    style={{
+                      background: 'var(--success)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '4px',
+                      padding: '6px 12px',
+                      cursor: 'pointer',
+                      fontSize: '12px',
+                      fontWeight: '600',
+                      minHeight: 'auto',
+                      whiteSpace: 'nowrap'
+                    }}
+                  >
+                    + Add
+                  </button>
                 </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Payment Terms (Days)</label>
-                  <input
-                    type="number"
-                    value={paymentTerms}
-                    onChange={(e) => setPaymentTerms(e.target.value)}
-                    min="0"
-                    max="365"
-                  />
-                </div>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Payment Terms (Days)</label>
+                <input
+                  type="number"
+                  value={paymentTerms}
+                  onChange={(e) => setPaymentTerms(e.target.value)}
+                  min="0"
+                  max="365"
+                />
               </div>
             </div>
           </div>
@@ -252,7 +380,14 @@ export default function BusinessSettings() {
               {email && <div>Email: {email}</div>}
             </div>
             <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--border)', fontSize: '12px', color: 'var(--text-light)' }}>
-              <div>Tax Rate: {taxRate}%</div>
+              <div style={{ marginBottom: '8px' }}>
+                <strong style={{ color: 'var(--text)' }}>Tax Rates:</strong>
+                {taxRates.map((tr, idx) => (
+                  <div key={idx} style={{ marginLeft: '16px', fontSize: '11px' }}>
+                    {tr.name}: {tr.rate}%
+                  </div>
+                ))}
+              </div>
               <div>Invoice Prefix: {invoicePrefix}</div>
               <div>Payment Terms: {paymentTerms} days</div>
               <div>Currency: {currency}</div>
