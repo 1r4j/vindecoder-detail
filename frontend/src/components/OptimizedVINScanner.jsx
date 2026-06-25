@@ -214,6 +214,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         return;
       }
 
+      // Configure Quagga for barcode detection
+      // Prioritize Code 128 (superior for VINs) over Code 39
       Quagga.init({
         inputStream: {
           type: 'LiveStream',
@@ -225,23 +227,45 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
           target: videoRef.current
         },
         decoder: {
+          // Code 128 first (preferred) then Code 39 as fallback
           readers: ['code_128_reader', 'code_39_reader']
         },
         numOfWorkers: 2,
-        frequency: 15
+        frequency: 15,
+        locator: {
+          halfSample: true
+        }
       }, (err) => {
         if (err) {
-          console.warn('Barcode init failed:', err);
+          console.warn('Barcode initialization failed:', err);
           resolve(false);
           return;
         }
+
+        console.log('✅ Barcode scanner initialized (Code 128 + Code 39)');
 
         Quagga.onDetected((result) => {
           if (!scanningRef.current || !result.codeResult) return;
 
           const code = result.codeResult.code?.trim();
-          if (code && validateVIN(code)) {
-            handleVINDetection(code, 'Barcode');
+          const barcodeFormat = result.codeResult.format || 'Unknown';
+
+          if (code) {
+            // Determine barcode type for logging
+            let barcodeType = 'Barcode';
+            if (barcodeFormat.includes('code_128')) {
+              barcodeType = 'Code 128 Barcode';
+            } else if (barcodeFormat.includes('code_39')) {
+              barcodeType = 'Code 39 Barcode';
+            }
+
+            // Validate the detected VIN
+            const validation = validateVIN(code);
+            if (validation.valid) {
+              handleVINDetection(code, barcodeType);
+            } else {
+              console.log(`⚠️  ${barcodeType} detected but invalid: ${code} - ${validation.reason}`);
+            }
           }
         });
 
@@ -495,7 +519,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         console.warn('Barcode init failed:', err);
       }
 
-      setStatus('Ready - Point camera at VIN');
+      setStatus('Ready - Scanning for Code 128 barcode...');
 
       // Initialize OCR in background
       (async () => {
