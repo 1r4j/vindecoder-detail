@@ -8,6 +8,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [status, setStatus] = useState('Tap to request camera access');
   const [cameraReady, setCameraReady] = useState(false);
+  const [confidence, setConfidence] = useState(0);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -18,6 +19,11 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const lastDetectionRef = useRef(0);
   const detectionCacheRef = useRef(new Map());
   const scannerContainerRef = useRef(null);
+
+  // Multi-frame fusion for improved accuracy
+  const multiFrameDetectionsRef = useRef([]);
+  const MAX_FRAME_HISTORY = 5;
+  const MIN_MATCHING_FRAMES = 3;
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -45,19 +51,35 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     };
   }, []);
 
-  const validateVIN = (vin) => {
-    if (!vin || typeof vin !== 'string') return false;
+  const validateVIN = (vin, minConfidence = 0.75) => {
+    if (!vin || typeof vin !== 'string') return { valid: false, reason: 'Invalid input' };
 
     const cleaned = vin.toUpperCase().replace(/[^A-Z0-9]/g, '');
 
-    if (cleaned.length !== 17) return false;
-    if (/[IOQ]/.test(cleaned)) return false;
+    // Length validation
+    if (cleaned.length !== 17) {
+      return { valid: false, reason: `Invalid length: ${cleaned.length} (expected 17)` };
+    }
 
+    // Character validation - reject I, O, Q which are commonly misread
+    if (/[IOQ]/.test(cleaned)) {
+      return { valid: false, reason: 'Contains invalid characters (I, O, or Q)' };
+    }
+
+    // Validate year code (10th position, index 9)
     const yearCode = cleaned[9];
     const validYears = 'ABCDEFGHJKLMNPRSTVWXY';
-    if (!validYears.includes(yearCode)) return false;
+    if (!validYears.includes(yearCode)) {
+      return { valid: false, reason: `Invalid year code: ${yearCode}` };
+    }
 
-    return verifyCheckDigit(cleaned);
+    // Validate checksum (9th character is check digit)
+    const checksumValid = verifyCheckDigit(cleaned);
+    if (!checksumValid) {
+      return { valid: false, reason: 'Checksum verification failed' };
+    }
+
+    return { valid: true, vin: cleaned, reason: 'Valid VIN' };
   };
 
   const verifyCheckDigit = (vin) => {
@@ -81,6 +103,44 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     const checkDigit = sum % 11;
     const expectedCheckDigit = checkDigit === 10 ? 'X' : checkDigit.toString();
     return vin[8] === expectedCheckDigit;
+  };
+
+  // Multi-frame fusion: compare detections across frames
+  const fuseMultipleDetections = (newVIN) => {
+    const detections = multiFrameDetectionsRef.current;
+    detections.push(newVIN);
+
+    // Keep only recent frames
+    if (detections.length > MAX_FRAME_HISTORY) {
+      detections.shift();
+    }
+
+    // Count matching VINs
+    const vinCounts = {};
+    detections.forEach(vin => {
+      vinCounts[vin] = (vinCounts[vin] || 0) + 1;
+    });
+
+    // Find VIN with most matches
+    let bestVIN = null;
+    let bestCount = 0;
+    for (const [vin, count] of Object.entries(vinCounts)) {
+      if (count > bestCount) {
+        bestCount = count;
+        bestVIN = vin;
+      }
+    }
+
+    // Calculate confidence
+    const fusedConfidence = detections.length > 0 ? bestCount / detections.length : 0;
+    setConfidence(Math.round(fusedConfidence * 100));
+
+    // Only accept if multiple frames match
+    if (bestCount >= MIN_MATCHING_FRAMES && fusedConfidence >= 0.6) {
+      return { vin: bestVIN, confidence: fusedConfidence, reliable: true };
+    }
+
+    return { vin: bestVIN, confidence: fusedConfidence, reliable: false };
   };
 
   const handleVINConfirmed = () => {
@@ -246,6 +306,16 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     const cacheKey = vin + source;
     const now = Date.now();
 
+    // Validate the detected VIN
+    const validation = validateVIN(vin);
+    if (!validation.valid) {
+      console.log(`❌ Invalid VIN detected: ${vin} - ${validation.reason}`);
+      return;
+    }
+
+    const cleanedVIN = validation.vin;
+
+    // Prevent duplicate detections too quickly
     if (detectionCacheRef.current.has(cacheKey)) {
       const lastDetection = detectionCacheRef.current.get(cacheKey);
       if (now - lastDetection < 500) return;
@@ -254,10 +324,18 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     detectionCacheRef.current.set(cacheKey, now);
     lastDetectionRef.current = now;
 
-    console.log(`✅ VIN Detected: ${vin} via ${source}`);
-    setDetectedVIN(vin);
-    setShowConfirmation(true);
-    scanningRef.current = false;
+    // Multi-frame fusion for reliability
+    const fused = fuseMultipleDetections(cleanedVIN);
+
+    // Only show confirmation if reliable (multiple frames match)
+    if (fused.reliable) {
+      console.log(`✅ VIN Confirmed (${fused.confidence.toFixed(0)}% confidence): ${cleanedVIN} via ${source}`);
+      setDetectedVIN(fused.vin);
+      setShowConfirmation(true);
+      scanningRef.current = false;
+    } else {
+      console.log(`⚠️  VIN Detected (${fused.confidence.toFixed(0)}% confidence): ${cleanedVIN} via ${source}`);
+    }
   };
 
   const optimizeForVINText = (imageData) => {
@@ -265,6 +343,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     const width = imageData.width;
     const height = imageData.height;
 
+    // Convert to grayscale
     const gray = new Uint8ClampedArray(width * height);
     for (let i = 0; i < data.length; i += 4) {
       const r = data[i];
@@ -273,49 +352,52 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
     }
 
-    const threshold = calculateThreshold(gray);
+    // Adaptive thresholding (local contrast enhancement)
+    const blockSize = 15;
+    const halfBlock = Math.floor(blockSize / 2);
+    const threshold = new Uint8ClampedArray(width * height);
 
-    for (let i = 0; i < gray.length; i++) {
-      const binaryValue = gray[i] > threshold ? 255 : 0;
-      data[i * 4] = binaryValue;
-      data[i * 4 + 1] = binaryValue;
-      data[i * 4 + 2] = binaryValue;
-    }
-  };
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
 
-  const calculateThreshold = (data) => {
-    const histogram = new Array(256).fill(0);
-    for (let i = 0; i < data.length; i++) {
-      histogram[data[i]]++;
-    }
+        // Calculate local mean
+        let sum = 0;
+        let count = 0;
 
-    const total = data.length;
-    let sum = 0;
-    for (let i = 0; i < 256; i++) {
-      sum += i * histogram[i];
-    }
+        for (let dy = -halfBlock; dy <= halfBlock; dy++) {
+          for (let dx = -halfBlock; dx <= halfBlock; dx++) {
+            const ny = Math.min(Math.max(y + dy, 0), height - 1);
+            const nx = Math.min(Math.max(x + dx, 0), width - 1);
+            sum += gray[ny * width + nx];
+            count++;
+          }
+        }
 
-    let sumB = 0, wB = 0, maxVariance = 0, threshold = 0;
+        const localMean = sum / count;
+        const localThreshold = localMean * 0.95; // Slightly lower threshold for dark text
 
-    for (let i = 0; i < 256; i++) {
-      wB += histogram[i];
-      if (wB === 0) continue;
-
-      const wF = total - wB;
-      if (wF === 0) break;
-
-      sumB += i * histogram[i];
-      const mB = sumB / wB;
-      const mF = (sum - sumB) / wF;
-
-      const variance = wB * wF * (mB - mF) * (mB - mF);
-      if (variance > maxVariance) {
-        maxVariance = variance;
-        threshold = i;
+        // Apply adaptive threshold
+        threshold[idx] = gray[idx] < localThreshold ? 0 : 255;
       }
     }
 
-    return threshold;
+    // Apply contrast stretching
+    let minVal = 255, maxVal = 0;
+    for (let i = 0; i < threshold.length; i++) {
+      if (threshold[i] < minVal) minVal = threshold[i];
+      if (threshold[i] > maxVal) maxVal = threshold[i];
+    }
+
+    // Write back to image data
+    for (let i = 0; i < data.length; i += 4) {
+      const idx = i / 4;
+      const val = Math.round(((threshold[idx] - minVal) / (maxVal - minVal + 1)) * 255);
+      data[i] = val;      // R
+      data[i + 1] = val;  // G
+      data[i + 2] = val;  // B
+      // A stays the same
+    }
   };
 
   const requestCameraAccess = async () => {
@@ -546,7 +628,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
         {cameraReady && (
           <>
-            {/* Scanning Guide - Responsive */}
+            {/* Scanning Guide with Confidence - Responsive */}
             <div style={{
               position: 'absolute',
               top: orientation === 'landscape' ? '20px' : '12px',
@@ -558,9 +640,22 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               borderRadius: '20px',
               fontSize: orientation === 'landscape' ? '13px' : '12px',
               fontWeight: '600',
-              zIndex: 2
+              zIndex: 2,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px'
             }}>
-              {status}
+              <span>{status}</span>
+              {confidence > 0 && (
+                <span style={{
+                  backgroundColor: confidence >= 60 ? '#4CAF50' : confidence >= 40 ? '#FFC107' : '#F44336',
+                  padding: '2px 8px',
+                  borderRadius: '12px',
+                  fontSize: orientation === 'landscape' ? '12px' : '11px'
+                }}>
+                  {confidence}%
+                </span>
+              )}
             </div>
 
             {/* Centering Guide Line - Responsive */}
