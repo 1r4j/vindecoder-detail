@@ -3,7 +3,7 @@ import Tesseract from 'tesseract.js';
 import Quagga from '@ericblade/quagga2';
 
 export default function OptimizedVINScanner({ onVINDetected, onClose }) {
-  const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
+  const [orientation, setOrientation] = useState('portrait');
   const [detectedVIN, setDetectedVIN] = useState('');
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [status, setStatus] = useState('Tap to request camera access');
@@ -23,17 +23,25 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     onCloseRef.current = onClose;
   }, [onClose]);
 
+  // Detect device orientation
   useEffect(() => {
     const handleOrientationChange = () => {
-      setIsLandscape(window.innerWidth > window.innerHeight);
+      const isLandscape = window.innerWidth > window.innerHeight;
+      setOrientation(isLandscape ? 'landscape' : 'portrait');
     };
 
+    // Set initial orientation
+    handleOrientationChange();
+
+    // Listen for orientation changes
     window.addEventListener('orientationchange', handleOrientationChange);
     window.addEventListener('resize', handleOrientationChange);
+    screen.orientation?.addEventListener('change', handleOrientationChange);
 
     return () => {
       window.removeEventListener('orientationchange', handleOrientationChange);
       window.removeEventListener('resize', handleOrientationChange);
+      screen.orientation?.removeEventListener('change', handleOrientationChange);
     };
   }, []);
 
@@ -424,52 +432,180 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
   };
 
-  if (!isLandscape) {
-    return (
-      <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', backgroundColor: '#000', zIndex: 10000, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#fff', textAlign: 'center' }}>
-        <div style={{ fontSize: '72px', marginBottom: '20px' }}>📱</div>
-        <h1 style={{ fontSize: '28px', marginBottom: '16px' }}>Rotate Your Phone</h1>
-        <p style={{ fontSize: '18px', marginBottom: '32px', maxWidth: '80%', opacity: 0.8 }}>Please rotate to landscape mode for scanning</p>
-        <button onClick={handleClose} style={{ padding: '12px 24px', fontSize: '16px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer' }}>Close</button>
-      </div>
-    );
-  }
-
   return (
-    <div ref={scannerContainerRef} style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, width: '100vw', height: '100vh', margin: 0, padding: 0, zIndex: 10000, display: 'flex', flexDirection: 'column', backgroundColor: '#000' }}>
+    <div ref={scannerContainerRef} style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      width: '100vw',
+      height: '100vh',
+      margin: 0,
+      padding: 0,
+      zIndex: 10000,
+      display: 'flex',
+      flexDirection: 'column',
+      backgroundColor: '#000'
+    }}>
       {/* Header */}
-      <div style={{ height: '60px', backgroundColor: 'white', borderBottom: '1px solid #E2E8F0', display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingLeft: '16px', paddingRight: '16px' }}>
-        <button onClick={handleClose} style={{ background: 'none', border: 'none', color: '#4F46E5', fontSize: '16px', fontWeight: '600', cursor: 'pointer', padding: '8px 12px' }}>Cancel</button>
-        <h1 style={{ margin: 0, fontSize: '18px', fontWeight: '700', color: '#1E293B' }}>VIN Scanner</h1>
+      <div style={{
+        height: orientation === 'landscape' ? '60px' : '56px',
+        backgroundColor: 'white',
+        borderBottom: '1px solid #E2E8F0',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingLeft: '16px',
+        paddingRight: '16px',
+        flexShrink: 0
+      }}>
+        <button
+          onClick={handleClose}
+          style={{
+            background: 'none',
+            border: 'none',
+            color: '#4F46E5',
+            fontSize: '16px',
+            fontWeight: '600',
+            cursor: 'pointer',
+            padding: '8px 12px'
+          }}
+        >
+          Cancel
+        </button>
+        <h1 style={{ margin: 0, fontSize: '16px', fontWeight: '700', color: '#1E293B' }}>
+          VIN Scanner
+        </h1>
         <div style={{ width: '44px' }} />
       </div>
 
-      {/* Camera Feed */}
-      <div style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
+      {/* Camera Feed - Responsive to orientation */}
+      <div style={{
+        flex: 1,
+        position: 'relative',
+        overflow: 'hidden',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center'
+      }}>
         {!cameraReady && (
-          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', backgroundColor: '#000', zIndex: 1 }}>
+          <div style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: '#000',
+            zIndex: 1
+          }}>
             <div style={{ color: '#fff', textAlign: 'center' }}>
               <div style={{ fontSize: '48px', marginBottom: '16px' }}>📷</div>
               <p style={{ fontSize: '16px', marginBottom: '24px' }}>{status}</p>
-              <button onClick={requestCameraAccess} style={{ padding: '12px 28px', fontSize: '16px', backgroundColor: '#4F46E5', color: 'white', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '600' }}>Enable Camera</button>
+              <button
+                onClick={requestCameraAccess}
+                style={{
+                  padding: '12px 28px',
+                  fontSize: '16px',
+                  backgroundColor: '#4F46E5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  cursor: 'pointer',
+                  fontWeight: '600'
+                }}
+              >
+                Enable Camera
+              </button>
             </div>
           </div>
         )}
 
-        <video ref={videoRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', zIndex: 0 }} autoPlay playsInline muted />
+        <video
+          ref={videoRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            objectFit: 'cover',
+            zIndex: 0,
+            transform: orientation === 'portrait' ? 'rotate(0deg)' : 'rotate(0deg)'
+          }}
+          autoPlay
+          playsInline
+          muted
+        />
 
         <canvas ref={canvasRef} style={{ position: 'absolute', display: 'none' }} />
 
         {cameraReady && (
           <>
-            {/* Yellow Centering Line */}
-            <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', width: '50%', height: '3px', backgroundColor: '#FFD700', zIndex: 2, boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)' }} />
+            {/* Scanning Guide - Responsive */}
+            <div style={{
+              position: 'absolute',
+              top: orientation === 'landscape' ? '20px' : '12px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              backgroundColor: 'rgba(0, 0, 0, 0.6)',
+              color: '#fff',
+              padding: '8px 16px',
+              borderRadius: '20px',
+              fontSize: orientation === 'landscape' ? '13px' : '12px',
+              fontWeight: '600',
+              zIndex: 2
+            }}>
+              {status}
+            </div>
+
+            {/* Centering Guide Line - Responsive */}
+            {orientation === 'landscape' ? (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '50%',
+                height: '3px',
+                backgroundColor: '#FFD700',
+                zIndex: 2,
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)'
+              }} />
+            ) : (
+              <div style={{
+                position: 'absolute',
+                top: '50%',
+                left: '50%',
+                transform: 'translate(-50%, -50%)',
+                width: '3px',
+                height: '40%',
+                backgroundColor: '#FFD700',
+                zIndex: 2,
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)'
+              }} />
+            )}
 
             {/* Instruction Text */}
-            <div style={{ position: 'absolute', bottom: '20px', left: '50%', transform: 'translateX(-50%)', color: '#fff', fontSize: '14px', fontWeight: '600', textAlign: 'center', zIndex: 2, opacity: 0.9 }}>Point camera at VIN barcode</div>
-
-            {/* Status Indicator */}
-            <div style={{ position: 'absolute', top: '20px', left: '50%', transform: 'translateX(-50%)', backgroundColor: 'rgba(0, 0, 0, 0.6)', color: '#fff', padding: '8px 16px', borderRadius: '20px', fontSize: '13px', fontWeight: '600', zIndex: 2 }}>{status}</div>
+            <div style={{
+              position: 'absolute',
+              bottom: orientation === 'landscape' ? '20px' : '16px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              color: '#fff',
+              fontSize: orientation === 'landscape' ? '14px' : '12px',
+              fontWeight: '600',
+              textAlign: 'center',
+              zIndex: 2,
+              opacity: 0.9,
+              padding: '0 16px'
+            }}>
+              {orientation === 'landscape' ? 'Point camera at VIN barcode' : 'Point camera at VIN'}
+            </div>
           </>
         )}
       </div>
