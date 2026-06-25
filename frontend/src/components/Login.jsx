@@ -157,7 +157,7 @@ export default function Login({ onSuccess }) {
 
           <div style={{ marginBottom: '24px' }}>
             <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Password</label>
-            <div style={{ position: 'relative' }}>
+            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
@@ -165,24 +165,30 @@ export default function Login({ onSuccess }) {
                 placeholder="••••••••"
                 required
                 minLength={6}
+                style={{ flex: 1, paddingRight: '50px' }}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
                 style={{
                   position: 'absolute',
-                  right: '12px',
-                  top: '50%',
-                  transform: 'translateY(-50%)',
+                  right: '8px',
                   background: 'none',
                   border: 'none',
                   color: 'var(--primary)',
                   cursor: 'pointer',
-                  fontSize: '18px',
-                  padding: '0',
+                  fontSize: '20px',
+                  padding: '8px 10px',
                   minHeight: 'auto',
-                  minWidth: 'auto'
+                  minWidth: 'auto',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  borderRadius: '4px',
+                  transition: 'background-color 0.2s'
                 }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(0,0,0,0.05)'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
               >
                 {showPassword ? '👁️' : '👁️‍🗨️'}
               </button>
