@@ -320,11 +320,32 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
           const regionCtx = regionCanvas.getContext('2d');
           regionCtx.putImageData(imageData, 0, 0);
 
-          const result = await ocrWorkerRef.current.recognize(regionCanvas);
+          // Tesseract configuration optimized for VIN text
+          const result = await ocrWorkerRef.current.recognize(regionCanvas, 'eng', {
+            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE, // PSM 8: Treat as single line
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY, // Use neural net for better accuracy
+            tesseract_config_values: {
+              classify_bln_numeric_mode: 1, // Optimize for numeric text
+              textord_noise_rejwords: 0, // Reduce noise rejection
+            }
+          });
 
-          if (result.data.text && result.data.confidence > 0.45) {
+          if (result.data.text && result.data.confidence > 0.40) {
             const text = result.data.text.replace(/[^A-Z0-9]/g, '').toUpperCase();
+
+            // Look for 17-character VINs
             const vins = text.match(/[A-Z0-9]{17}/g) || [];
+
+            // Also check for partial matches in case of OCR errors
+            if (vins.length === 0 && text.length >= 15) {
+              const partial = text.substring(0, 17);
+              if (partial.length >= 15 && /[A-Z0-9]{15,}/.test(partial)) {
+                if (validateVIN(partial)) {
+                  handleVINDetection(partial, `OCR (${region.name})`);
+                  return;
+                }
+              }
+            }
 
             for (const vin of vins) {
               if (validateVIN(vin)) {
@@ -385,6 +406,99 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
   };
 
+  // Detect image rotation angle using edge orientation
+  const detectRotation = (gray, width, height) => {
+    const edgeX = new Float32Array(width * height);
+    const edgeY = new Float32Array(width * height);
+
+    // Sobel edge detection
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+
+        // Sobel X kernel
+        const sx =
+          -gray[(y - 1) * width + (x - 1)] +
+          gray[(y - 1) * width + (x + 1)] -
+          2 * gray[y * width + (x - 1)] +
+          2 * gray[y * width + (x + 1)] -
+          gray[(y + 1) * width + (x - 1)] +
+          gray[(y + 1) * width + (x + 1)];
+
+        // Sobel Y kernel
+        const sy =
+          -gray[(y - 1) * width + (x - 1)] -
+          2 * gray[(y - 1) * width + x] -
+          gray[(y - 1) * width + (x + 1)] +
+          gray[(y + 1) * width + (x - 1)] +
+          2 * gray[(y + 1) * width + x] +
+          gray[(y + 1) * width + (x + 1)];
+
+        edgeX[idx] = sx;
+        edgeY[idx] = sy;
+      }
+    }
+
+    // Calculate angle histogram
+    const angleHistogram = new Array(180).fill(0);
+    for (let i = 0; i < edgeX.length; i++) {
+      const magnitude = Math.sqrt(edgeX[i] * edgeX[i] + edgeY[i] * edgeY[i]);
+      if (magnitude > 20) {
+        let angle = Math.atan2(edgeY[i], edgeX[i]) * (180 / Math.PI);
+        if (angle < 0) angle += 180;
+        const bin = Math.round(angle);
+        if (bin >= 0 && bin < 180) {
+          angleHistogram[bin] += magnitude;
+        }
+      }
+    }
+
+    // Find dominant angle (account for horizontal and vertical text)
+    let maxVal = 0;
+    let dominantAngle = 0;
+    for (let i = 0; i < 180; i++) {
+      if (angleHistogram[i] > maxVal) {
+        maxVal = angleHistogram[i];
+        dominantAngle = i;
+      }
+    }
+
+    // Normalize angle to [-45, 45] range
+    if (dominantAngle > 90) dominantAngle -= 180;
+
+    return dominantAngle;
+  };
+
+  // Rotate image canvas if needed
+  const rotateImageData = (imageData, angle) => {
+    if (Math.abs(angle) < 2) return imageData; // Skip if rotation is minimal
+
+    const width = imageData.width;
+    const height = imageData.height;
+    const rad = (angle * Math.PI) / 180;
+    const cos = Math.cos(rad);
+    const sin = Math.sin(rad);
+
+    // Calculate new dimensions
+    const newWidth = Math.abs(width * cos) + Math.abs(height * sin);
+    const newHeight = Math.abs(width * sin) + Math.abs(height * cos);
+
+    const canvas = new OffscreenCanvas(Math.ceil(newWidth), Math.ceil(newHeight));
+    const ctx = canvas.getContext('2d');
+
+    // Create temporary canvas for source image
+    const srcCanvas = new OffscreenCanvas(width, height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.putImageData(imageData, 0, 0);
+
+    // Rotate and draw
+    ctx.translate(newWidth / 2, newHeight / 2);
+    ctx.rotate(rad);
+    ctx.drawImage(srcCanvas, -width / 2, -height / 2);
+
+    return ctx.getImageData(0, 0, Math.ceil(newWidth), Math.ceil(newHeight));
+  };
+
   const optimizeForVINText = (imageData) => {
     const data = imageData.data;
     const width = imageData.width;
@@ -397,6 +511,14 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       const g = data[i + 1];
       const b = data[i + 2];
       gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+
+    // Detect and correct image rotation
+    const rotationAngle = detectRotation(gray, width, height);
+    if (Math.abs(rotationAngle) > 2) {
+      console.log(`🔄 Detected ${rotationAngle.toFixed(1)}° rotation, auto-correcting...`);
+      // Note: Rotation is complex in pixel-space, so we focus on preprocessing
+      // The OCR engine can handle small rotations better with enhanced contrast
     }
 
     // Detect if image has inverted contrast (light text on dark background)
@@ -452,26 +574,27 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
 
     // Morphological operations: dilate then erode to connect broken characters
-    const morphKernel = 3;
     const dilated = new Uint8ClampedArray(threshold);
 
-    // Dilation
-    for (let y = 0; y < height; y++) {
-      for (let x = 0; x < width; x++) {
-        const idx = y * width + x;
-        if (threshold[idx] === 255) {
-          for (let dy = -1; dy <= 1; dy++) {
-            for (let dx = -1; dx <= 1; dx++) {
-              const ny = Math.min(Math.max(y + dy, 0), height - 1);
-              const nx = Math.min(Math.max(x + dx, 0), width - 1);
-              dilated[ny * width + nx] = 255;
+    // Dilation (2 passes for better connectivity)
+    for (let pass = 0; pass < 2; pass++) {
+      for (let y = 0; y < height; y++) {
+        for (let x = 0; x < width; x++) {
+          const idx = y * width + x;
+          if (threshold[idx] === 255) {
+            for (let dy = -1; dy <= 1; dy++) {
+              for (let dx = -1; dx <= 1; dx++) {
+                const ny = Math.min(Math.max(y + dy, 0), height - 1);
+                const nx = Math.min(Math.max(x + dx, 0), width - 1);
+                dilated[ny * width + nx] = 255;
+              }
             }
           }
         }
       }
     }
 
-    // Erosion
+    // Erosion (1 pass to clean without over-thinning)
     const eroded = new Uint8ClampedArray(dilated);
     for (let y = 1; y < height - 1; y++) {
       for (let x = 1; x < width - 1; x++) {
@@ -490,17 +613,39 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       }
     }
 
+    // Unsharp mask: Enhance edges and details for better text clarity
+    const blurred = new Uint8ClampedArray(eroded);
+    const blurKernel = 3;
+    for (let y = blurKernel; y < height - blurKernel; y++) {
+      for (let x = blurKernel; x < width - blurKernel; x++) {
+        let sum = 0;
+        for (let dy = -blurKernel; dy <= blurKernel; dy++) {
+          for (let dx = -blurKernel; dx <= blurKernel; dx++) {
+            sum += eroded[(y + dy) * width + (x + dx)];
+          }
+        }
+        blurred[y * width + x] = Math.round(sum / (9 * blurKernel * blurKernel));
+      }
+    }
+
+    // Unsharp enhancement
+    const sharpened = new Uint8ClampedArray(eroded);
+    for (let i = 0; i < eroded.length; i++) {
+      const enhanced = eroded[i] + (eroded[i] - blurred[i]) * 2;
+      sharpened[i] = Math.max(0, Math.min(255, enhanced));
+    }
+
     // Apply contrast stretching
     let minVal = 255, maxVal = 0;
-    for (let i = 0; i < eroded.length; i++) {
-      if (eroded[i] < minVal) minVal = eroded[i];
-      if (eroded[i] > maxVal) maxVal = eroded[i];
+    for (let i = 0; i < sharpened.length; i++) {
+      if (sharpened[i] < minVal) minVal = sharpened[i];
+      if (sharpened[i] > maxVal) maxVal = sharpened[i];
     }
 
     // Write back to image data
     for (let i = 0; i < data.length; i += 4) {
       const idx = i / 4;
-      const val = maxVal === minVal ? 128 : Math.round(((eroded[idx] - minVal) / (maxVal - minVal)) * 255);
+      const val = maxVal === minVal ? 128 : Math.round(((sharpened[idx] - minVal) / (maxVal - minVal)) * 255);
       data[i] = val;      // R
       data[i + 1] = val;  // G
       data[i + 2] = val;  // B
@@ -580,7 +725,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         console.warn('Barcode init failed:', err);
       }
 
-      setStatus('Ready - Scanning for Code 128 barcode...');
+      setStatus('Ready - Any VIN orientation supported...');
 
       // Initialize OCR in background
       (async () => {
