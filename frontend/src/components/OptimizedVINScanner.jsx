@@ -705,36 +705,19 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               )}
             </div>
 
-            {/* Centering Guide Line - Responsive to Phone Orientation */}
-            {orientation === 'landscape' ? (
-              // Landscape: Horizontal line (phone held wide)
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '70%',
-                height: '3px',
-                backgroundColor: '#FFD700',
-                zIndex: 2,
-                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)',
-                transition: 'all 0.3s ease-in-out'
-              }} />
-            ) : (
-              // Portrait: Vertical line (phone held tall)
-              <div style={{
-                position: 'absolute',
-                top: '50%',
-                left: '50%',
-                transform: 'translate(-50%, -50%)',
-                width: '3px',
-                height: '60%',
-                backgroundColor: '#FFD700',
-                zIndex: 2,
-                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)',
-                transition: 'all 0.3s ease-in-out'
-              }} />
-            )}
+            {/* Centering Guide Line - Horizontal in Both Orientations */}
+            <div style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: orientation === 'landscape' ? '70%' : '60%',
+              height: '3px',
+              backgroundColor: '#FFD700',
+              zIndex: 2,
+              boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)',
+              transition: 'all 0.3s ease-in-out'
+            }} />
 
             {/* Instruction Text */}
             <div style={{
