@@ -29,25 +29,48 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     onCloseRef.current = onClose;
   }, [onClose]);
 
-  // Detect device orientation
+  // Detect device orientation - responsive to phone rotation
   useEffect(() => {
     const handleOrientationChange = () => {
-      const isLandscape = window.innerWidth > window.innerHeight;
-      setOrientation(isLandscape ? 'landscape' : 'portrait');
+      // More reliable: check screen.orientation if available, fallback to window dimensions
+      let newOrientation = 'portrait';
+
+      if (screen.orientation && screen.orientation.type) {
+        // Use screen.orientation API for more accurate detection
+        newOrientation = screen.orientation.type.includes('landscape') ? 'landscape' : 'portrait';
+      } else {
+        // Fallback to window dimensions
+        newOrientation = window.innerWidth > window.innerHeight ? 'landscape' : 'portrait';
+      }
+
+      setOrientation(newOrientation);
+      console.log(`📱 Orientation changed to: ${newOrientation}`);
     };
 
-    // Set initial orientation
+    // Set initial orientation immediately
     handleOrientationChange();
 
-    // Listen for orientation changes
+    // Listen for all orientation change events
     window.addEventListener('orientationchange', handleOrientationChange);
     window.addEventListener('resize', handleOrientationChange);
-    screen.orientation?.addEventListener('change', handleOrientationChange);
+
+    if (screen.orientation) {
+      screen.orientation.addEventListener('change', handleOrientationChange);
+    }
+
+    // Small delay check in case orientation is queried before it updates
+    const delayedCheck = setTimeout(() => {
+      handleOrientationChange();
+    }, 100);
 
     return () => {
+      clearTimeout(delayedCheck);
       window.removeEventListener('orientationchange', handleOrientationChange);
       window.removeEventListener('resize', handleOrientationChange);
-      screen.orientation?.removeEventListener('change', handleOrientationChange);
+
+      if (screen.orientation) {
+        screen.orientation.removeEventListener('change', handleOrientationChange);
+      }
     };
   }, []);
 
@@ -658,7 +681,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               )}
             </div>
 
-            {/* Centering Guide Line - Responsive */}
+            {/* Centering Guide Line - Responsive to Orientation */}
             {orientation === 'portrait' ? (
               <div style={{
                 position: 'absolute',
@@ -669,7 +692,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
                 height: '3px',
                 backgroundColor: '#FFD700',
                 zIndex: 2,
-                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)'
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)',
+                transition: 'all 0.3s ease-in-out'
               }} />
             ) : (
               <div style={{
@@ -681,7 +705,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
                 height: '50%',
                 backgroundColor: '#FFD700',
                 zIndex: 2,
-                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)'
+                boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)',
+                transition: 'all 0.3s ease-in-out'
               }} />
             )}
 
