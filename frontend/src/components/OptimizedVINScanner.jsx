@@ -564,13 +564,13 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
             </div>
 
             {/* Centering Guide Line - Responsive */}
-            {orientation === 'landscape' ? (
+            {orientation === 'portrait' ? (
               <div style={{
                 position: 'absolute',
                 top: '50%',
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
-                width: '50%',
+                width: '60%',
                 height: '3px',
                 backgroundColor: '#FFD700',
                 zIndex: 2,
@@ -583,7 +583,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
                 left: '50%',
                 transform: 'translate(-50%, -50%)',
                 width: '3px',
-                height: '40%',
+                height: '50%',
                 backgroundColor: '#FFD700',
                 zIndex: 2,
                 boxShadow: '0 0 15px rgba(255, 215, 0, 0.8)'
