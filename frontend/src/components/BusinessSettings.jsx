@@ -262,7 +262,9 @@ export default function BusinessSettings() {
               </div>
 
               <div>
-                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Tax Rates</label>
+                <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>
+                  Tax Rates <span style={{ fontSize: '12px', color: 'var(--text-light)', fontWeight: '400' }}>(supports decimals like 9.25%)</span>
+                </label>
                 <div style={{ backgroundColor: 'var(--light)', borderRadius: '8px', padding: '12px', marginBottom: '12px' }}>
                   {taxRates.map((taxRate, index) => (
                     <div key={index} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: '8px', alignItems: 'center', marginBottom: index < taxRates.length - 1 ? '12px' : '0' }}>
@@ -279,8 +281,8 @@ export default function BusinessSettings() {
                         onChange={(e) => handleUpdateTaxRate(index, 'rate', e.target.value)}
                         min="0"
                         max="100"
-                        step="0.1"
-                        placeholder="Rate %"
+                        step="0.01"
+                        placeholder="e.g., 9.25"
                         style={{ fontSize: '14px' }}
                       />
                       <button
@@ -320,8 +322,8 @@ export default function BusinessSettings() {
                     onChange={(e) => setNewTaxRateValue(e.target.value)}
                     min="0"
                     max="100"
-                    step="0.1"
-                    placeholder="Rate %"
+                    step="0.01"
+                    placeholder="e.g., 9.25"
                     onKeyPress={(e) => e.key === 'Enter' && handleAddTaxRate()}
                     style={{ fontSize: '14px' }}
                   />
