@@ -177,26 +177,28 @@ export default function Login({ onSuccess }) {
                 title={showPassword ? 'Hide password' : 'Show password'}
                 style={{
                   position: 'absolute',
-                  right: '0',
-                  top: '0',
-                  bottom: '0',
+                  right: '8px',
+                  top: '50%',
+                  transform: 'translateY(-50%)',
                   background: 'none',
                   border: 'none',
                   color: 'var(--primary)',
                   cursor: 'pointer',
                   fontSize: '18px',
-                  padding: '12px 12px',
-                  minHeight: '44px',
-                  minWidth: '44px',
+                  padding: '4px 6px',
+                  height: 'auto',
+                  width: 'auto',
+                  minHeight: 'auto',
+                  minWidth: 'auto',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderRadius: '0',
+                  borderRadius: '4px',
                   transition: 'background-color 0.2s',
                   zIndex: 1,
                   pointerEvents: 'auto'
                 }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(79, 70, 229, 0.05)'}
+                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(79, 70, 229, 0.1)'}
                 onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
               >
                 {showPassword ? '👁️' : '👁️‍🗨️'}
