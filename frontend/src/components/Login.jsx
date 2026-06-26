@@ -157,7 +157,7 @@ export default function Login({ onSuccess }) {
 
           <div style={{ marginBottom: '24px' }}>
             <label style={{ display: 'block', marginBottom: '6px', fontWeight: '500' }}>Password</label>
-            <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <div style={{ position: 'relative' }}>
               <input
                 type={showPassword ? 'text' : 'password'}
                 value={password}
@@ -165,29 +165,38 @@ export default function Login({ onSuccess }) {
                 placeholder="••••••••"
                 required
                 minLength={6}
-                style={{ flex: 1, paddingRight: '50px' }}
+                style={{
+                  width: '100%',
+                  paddingRight: '48px',
+                  boxSizing: 'border-box'
+                }}
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
+                title={showPassword ? 'Hide password' : 'Show password'}
                 style={{
                   position: 'absolute',
-                  right: '8px',
+                  right: '0',
+                  top: '0',
+                  bottom: '0',
                   background: 'none',
                   border: 'none',
                   color: 'var(--primary)',
                   cursor: 'pointer',
-                  fontSize: '20px',
-                  padding: '8px 10px',
-                  minHeight: 'auto',
-                  minWidth: 'auto',
+                  fontSize: '18px',
+                  padding: '12px 12px',
+                  minHeight: '44px',
+                  minWidth: '44px',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  borderRadius: '4px',
-                  transition: 'background-color 0.2s'
+                  borderRadius: '0',
+                  transition: 'background-color 0.2s',
+                  zIndex: 1,
+                  pointerEvents: 'auto'
                 }}
-                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(0,0,0,0.05)'}
+                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(79, 70, 229, 0.05)'}
                 onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
               >
                 {showPassword ? '👁️' : '👁️‍🗨️'}

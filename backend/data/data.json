@@ -1,4 +1,5 @@
 {
+  "users": [],
   "vehicles": [
     {
       "id": 1,
@@ -17,7 +18,6 @@
       "scannedAt": "2026-06-22T21:10:43.211Z"
     }
   ],
-  "invoices": [],
   "services": [
     {
       "id": 1,
@@ -44,5 +44,21 @@
       "name": "Wax Application",
       "price": 100
     }
-  ]
+  ],
+  "invoices": [],
+  "customers": [],
+  "businessSettings": {
+    "businessName": "Your Detailing Business",
+    "address": "123 Main Street",
+    "city": "Your City",
+    "state": "State",
+    "zipCode": "12345",
+    "phone": "(555) 123-4567",
+    "email": "info@yourdetailing.com",
+    "taxRate": 8,
+    "invoicePrefix": "INV",
+    "paymentTerms": 14,
+    "currency": "$",
+    "logo": null
+  }
 }
