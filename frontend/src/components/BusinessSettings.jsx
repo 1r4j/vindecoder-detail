@@ -23,8 +23,30 @@ export default function BusinessSettings() {
   const [newTaxRateName, setNewTaxRateName] = useState('');
   const [newTaxRateValue, setNewTaxRateValue] = useState('0');
 
+  // Reset all state when user changes
   useEffect(() => {
-    loadSettings();
+    // Clear state immediately
+    setSettings(null);
+    setBusinessName('');
+    setAddress('');
+    setCity('');
+    setState('');
+    setZipCode('');
+    setPhone('');
+    setEmail('');
+    setTaxRates([{ name: 'Standard', rate: 8 }]);
+    setInvoicePrefix('INV');
+    setPaymentTerms('14');
+    setCurrency('$');
+    setNewTaxRateName('');
+    setNewTaxRateValue('0');
+    setError('');
+    setSuccess('');
+
+    // Then load new settings for the user
+    if (user?.id) {
+      loadSettings();
+    }
   }, [user?.id]);
 
   const loadSettings = async () => {
@@ -54,6 +76,7 @@ export default function BusinessSettings() {
       setInvoicePrefix(data?.invoicePrefix || 'INV');
       setPaymentTerms(String(data?.paymentTerms || 14));
       setCurrency(data?.currency || '$');
+      setError('');
     } catch (err) {
       setError('Failed to load settings');
       console.error(err);
