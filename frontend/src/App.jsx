@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import './App.css';
 import VINDecoder from './components/VINDecoder';
 import InvoiceForm from './components/InvoiceForm';
@@ -11,7 +11,15 @@ import { useAuth } from './context/AuthContext';
 function App() {
   const [currentPage, setCurrentPage] = useState('decoder');
   const [selectedVehicle, setSelectedVehicle] = useState(null);
-  const { isAuthenticated, loading } = useAuth();
+  const { isAuthenticated, loading, user } = useAuth();
+
+  // Reset state when user changes
+  useEffect(() => {
+    if (isAuthenticated && user) {
+      setCurrentPage('decoder');
+      setSelectedVehicle(null);
+    }
+  }, [user?.id]);
 
   const handleVehicleSelected = (vehicle) => {
     setSelectedVehicle(vehicle);

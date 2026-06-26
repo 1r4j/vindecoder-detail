@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { vehicleService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 import VehicleDetails from './VehicleDetails';
 import VINBreakdown from './VINBreakdown';
 import OptimizedVINScanner from './OptimizedVINScanner';
 
 export default function VINDecoder({ onVehicleSelected }) {
+  const { user } = useAuth();
   const [vin, setVin] = useState('');
   const [vehicle, setVehicle] = useState(null);
   const [vehicleColor, setVehicleColor] = useState('');
@@ -14,25 +16,37 @@ export default function VINDecoder({ onVehicleSelected }) {
   const [recentVehicles, setRecentVehicles] = useState([]);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Load vehicle history from localStorage on mount
+  // Load vehicle history from localStorage when user changes
   useEffect(() => {
+    if (!user?.id) {
+      setRecentVehicles([]);
+      return;
+    }
+
     try {
-      const saved = localStorage.getItem('vehicleHistory');
+      const storageKey = `vehicleHistory_${user.id}`;
+      const saved = localStorage.getItem(storageKey);
       if (saved) {
         setRecentVehicles(JSON.parse(saved));
+      } else {
+        setRecentVehicles([]);
       }
     } catch (err) {
       console.error('Failed to load vehicle history:', err);
+      setRecentVehicles([]);
     }
-  }, []);
+  }, [user?.id]);
 
-  // Save vehicle history to localStorage when it changes
+  // Save vehicle history to localStorage when it changes (per user)
   const saveVehicleToHistory = (vehicleData) => {
+    if (!user?.id) return;
+
     try {
       setRecentVehicles(prev => {
         const filtered = prev.filter(v => v.id !== vehicleData.id);
         const updated = [vehicleData, ...filtered].slice(0, 50); // Keep last 50 vehicles
-        localStorage.setItem('vehicleHistory', JSON.stringify(updated));
+        const storageKey = `vehicleHistory_${user.id}`;
+        localStorage.setItem(storageKey, JSON.stringify(updated));
         return updated;
       });
     } catch (err) {

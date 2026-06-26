@@ -2,8 +2,10 @@ import { useState, useEffect } from 'react';
 import { invoiceService, customerService, settingsService } from '../services/api';
 import { generatePDF } from '../utils/pdfGenerator';
 import ConsolidateInvoices from './ConsolidateInvoices';
+import { useAuth } from '../context/AuthContext';
 
 export default function InvoiceHistory() {
+  const { user } = useAuth();
   const [invoices, setInvoices] = useState([]);
   const [customers, setCustomers] = useState({});
   const [settings, setSettings] = useState(null);
@@ -17,7 +19,7 @@ export default function InvoiceHistory() {
 
   useEffect(() => {
     loadData();
-  }, [statusFilter]);
+  }, [statusFilter, user?.id]);
 
   const loadData = async () => {
     setLoading(true);

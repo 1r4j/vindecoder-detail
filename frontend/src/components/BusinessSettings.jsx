@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { settingsService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function BusinessSettings() {
+  const { user } = useAuth();
   const [settings, setSettings] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -23,7 +25,7 @@ export default function BusinessSettings() {
 
   useEffect(() => {
     loadSettings();
-  }, []);
+  }, [user?.id]);
 
   const loadSettings = async () => {
     setLoading(true);

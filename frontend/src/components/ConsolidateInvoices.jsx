@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react';
 import { invoiceService, customerService } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 export default function ConsolidateInvoices({ onClose, onSuccess }) {
+  const { user } = useAuth();
   const [customers, setCustomers] = useState([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState('');
   const [customerInvoices, setCustomerInvoices] = useState([]);
@@ -12,7 +14,7 @@ export default function ConsolidateInvoices({ onClose, onSuccess }) {
 
   useEffect(() => {
     loadCustomers();
-  }, []);
+  }, [user?.id]);
 
   const loadCustomers = async () => {
     try {
