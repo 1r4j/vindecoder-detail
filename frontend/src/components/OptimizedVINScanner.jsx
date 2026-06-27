@@ -283,10 +283,12 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     if (!ocrWorkerRef.current) return null;
 
     try {
-      // Focus on the area where VIN text typically appears (middle-lower part of label)
+      // Focus on the area where VIN text typically appears
       const labelRegions = [
-        { x: 0.0, y: 0.45, w: 1.0, h: 0.4, name: 'Label-Center' },  // Full width, label area
-        { x: 0.05, y: 0.4, w: 0.9, h: 0.5, name: 'Label-Full' },    // Expanded area
+        { x: 0.0, y: 0.5, w: 1.0, h: 0.35, name: 'BelowBarcode' },   // Text below barcode (primary)
+        { x: 0.0, y: 0.45, w: 1.0, h: 0.4, name: 'Label-Center' },   // Full width, label area
+        { x: 0.05, y: 0.35, w: 0.9, h: 0.55, name: 'Label-Full' },   // Expanded area
+        { x: 0.1, y: 0.3, w: 0.8, h: 0.6, name: 'Label-Expanded' },  // Very expanded search
       ];
 
       for (const region of labelRegions) {
@@ -313,21 +315,54 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
             tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
           });
 
-          if (result.data.text && result.data.confidence > 0.35) {
-            const text = result.data.text.replace(/[^A-Z0-9]/g, '').toUpperCase();
+          if (result.data.text && result.data.confidence > 0.30) {
+            // Aggressive text cleaning for VINs
+            let text = result.data.text.toUpperCase();
+
+            // Replace common OCR errors for VINs
+            text = text.replace(/O/g, '0'); // O → 0
+            text = text.replace(/l/g, '1'); // l → 1
+            text = text.replace(/I/g, '1'); // I → 1 (but keep some I's for validation)
+            text = text.replace(/S/g, '5'); // S → 5
+            text = text.replace(/Z/g, '2'); // Z → 2
+            text = text.replace(/B/g, '8'); // B → 8
+
+            // Extract alphanumeric only
+            text = text.replace(/[^A-Z0-9]/g, '');
+
+            // Look for 17-char VINs
             const vins = text.match(/[A-Z0-9]{17}/g) || [];
 
             for (const vin of vins) {
-              if (validateVIN(vin).valid) {
+              const validation = validateVIN(vin);
+              if (validation.valid) {
                 return { vin, source: `Label OCR (${region.name})`, confidence: result.data.confidence };
               }
             }
 
-            // Try partial matches
+            // Try extracting from longer strings (might have extra chars)
+            for (let i = 0; i <= Math.max(0, text.length - 17); i++) {
+              const potential = text.substring(i, i + 17);
+              if (/^[A-Z0-9]{17}$/.test(potential)) {
+                const validation = validateVIN(potential);
+                if (validation.valid) {
+                  return { vin: potential, source: `Label OCR (${region.name})`, confidence: result.data.confidence * 0.95 };
+                }
+              }
+            }
+
+            // Try partial matches with smart padding
             if (text.length >= 15) {
-              const partial = text.substring(0, 17).padEnd(17, '0');
-              if (validateVIN(partial).valid) {
-                return { vin: partial, source: `Label OCR Partial (${region.name})`, confidence: result.data.confidence * 0.8 };
+              // Take the longest continuous alphanumeric sequence
+              const sequences = text.match(/[A-Z0-9]+/g) || [];
+              for (const seq of sequences) {
+                if (seq.length >= 15) {
+                  const partial = seq.substring(0, 17).padEnd(17, '0');
+                  const validation = validateVIN(partial);
+                  if (validation.valid) {
+                    return { vin: partial, source: `Label OCR Partial (${region.name})`, confidence: result.data.confidence * 0.85 };
+                  }
+                }
               }
             }
           }
