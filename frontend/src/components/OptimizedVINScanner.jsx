@@ -505,20 +505,36 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     if (distortionAnalysis.detected) {
       console.log(`🔀 Code 128 Distortion detected (type: ${distortionAnalysis.type}, severity: ${distortionAnalysis.severity.toFixed(2)}%), applying correction...`);
 
-      // Apply appropriate correction based on distortion type
-      let corrected = imageData;
+      try {
+        // Apply appropriate correction based on distortion type
+        let corrected = imageData;
 
-      if (distortionAnalysis.type === 'arc') {
-        corrected = deWarpArcBarcode(imageData, distortionAnalysis);
-      } else if (distortionAnalysis.type === 'wave') {
-        corrected = deWarpWaveBarcode(imageData, distortionAnalysis);
-      } else if (distortionAnalysis.type === 'radial') {
-        corrected = deWarpRadialBarcode(imageData, distortionAnalysis);
-      } else if (distortionAnalysis.type === 'perspective') {
-        corrected = deWarpPerspectiveBarcode(imageData, distortionAnalysis);
+        if (distortionAnalysis.type === 'arc') {
+          corrected = deWarpArcBarcode(imageData, distortionAnalysis);
+          console.log('✅ Arc correction applied');
+        } else if (distortionAnalysis.type === 'wave') {
+          corrected = deWarpWaveBarcode(imageData, distortionAnalysis);
+          console.log('✅ Wave correction applied');
+        } else if (distortionAnalysis.type === 'radial') {
+          corrected = deWarpRadialBarcode(imageData, distortionAnalysis);
+          console.log('✅ Radial correction applied');
+        } else if (distortionAnalysis.type === 'perspective') {
+          corrected = deWarpPerspectiveBarcode(imageData, distortionAnalysis);
+          console.log('✅ Perspective correction applied');
+        }
+
+        // Verify corrected data is valid
+        if (corrected && corrected.data && corrected.data.length > 0) {
+          return corrected;
+        } else {
+          console.warn('⚠️ Dewarping produced invalid data, using original');
+          return imageData;
+        }
+      } catch (error) {
+        console.error('❌ Dewarping error:', error.message);
+        console.log('Falling back to original image');
+        return imageData;
       }
-
-      return corrected;
     }
 
     return imageData;
@@ -563,16 +579,16 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     let distortionType = 'none';
     let severity = 0;
 
-    if (radialDistortion.strength > 0.08) {
+    if (radialDistortion.strength > 0.06) {
       distortionType = 'radial';
       severity = radialDistortion.strength;
-    } else if (horizontalCurve.waveCount > 1 && horizontalCurve.amplitude > 0.05) {
+    } else if (horizontalCurve.waveCount > 1 && horizontalCurve.amplitude > 0.03) {
       distortionType = 'wave';
       severity = horizontalCurve.amplitude;
-    } else if (horizontalCurve.curvature > 0.004) {
+    } else if (horizontalCurve.curvature > 0.002) {
       distortionType = 'arc';
       severity = horizontalCurve.curvature;
-    } else if (verticalCurve.skewness > 0.1) {
+    } else if (verticalCurve.skewness > 0.08) {
       distortionType = 'perspective';
       severity = verticalCurve.skewness;
     }
@@ -708,74 +724,110 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     return { strength, avgRadius };
   };
 
-  // Dewarp arc-shaped Code 128 barcodes
+  // Dewarp arc-shaped Code 128 barcodes - Improved
   const deWarpArcBarcode = (imageData, analysis) => {
-    const canvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const ctx = canvas.getContext('2d');
-
-    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const srcCtx = srcCanvas.getContext('2d');
-    srcCtx.putImageData(imageData, 0, 0);
-
     const { minX, maxX, minY, maxY, regionWidth, regionHeight, horizontalCurve } = analysis;
 
-    // Apply polynomial curve correction
-    const outputCanvas = new OffscreenCanvas(regionWidth, regionHeight * 1.1);
+    // Create output canvas
+    const outputCanvas = new OffscreenCanvas(imageData.width, imageData.height);
     const outputCtx = outputCanvas.getContext('2d');
 
-    for (let y = 0; y < regionHeight; y++) {
-      const yNorm = y / regionHeight;
-      const curveOffset = horizontalCurve.midPoints[Math.floor(yNorm * (horizontalCurve.midPoints.length - 1))] || 0;
-      const baseX = minX + curveOffset - horizontalCurve.midPoints[0];
+    // Copy original image data
+    outputCtx.putImageData(imageData, 0, 0);
+    const outputData = outputCtx.getImageData(0, 0, imageData.width, imageData.height);
+    const srcData = imageData.data;
+    const dstData = outputData.data;
 
-      const srcImageData = srcCtx.getImageData(baseX, minY + y, regionWidth, 1);
-      outputCtx.putImageData(srcImageData, 0, y);
+    // Calculate average curve offset to normalize
+    let avgOffset = 0;
+    for (const point of horizontalCurve.midPoints) {
+      avgOffset += point;
+    }
+    avgOffset /= Math.max(1, horizontalCurve.midPoints.length);
+
+    // Straighten by sampling from corrected positions
+    for (let y = 0; y < regionHeight; y++) {
+      const yNorm = Math.min(y / regionHeight, 1.0);
+      const stripIdx = Math.floor(yNorm * (horizontalCurve.midPoints.length - 1));
+      const nextIdx = Math.min(stripIdx + 1, horizontalCurve.midPoints.length - 1);
+
+      // Linear interpolation between strip points
+      const t = (yNorm * (horizontalCurve.midPoints.length - 1)) - stripIdx;
+      const offset = horizontalCurve.midPoints[stripIdx] * (1 - t) +
+                     horizontalCurve.midPoints[nextIdx] * t;
+
+      const curveCorrection = offset - avgOffset;
+
+      // Copy pixels from curved position to straight position
+      for (let x = 0; x < regionWidth; x++) {
+        const srcX = Math.floor(minX + x + curveCorrection);
+        const srcY = minY + y;
+
+        // Bounds check
+        if (srcX >= 0 && srcX < imageData.width && srcY >= 0 && srcY < imageData.height) {
+          const srcIdx = (srcY * imageData.width + srcX) * 4;
+          const dstIdx = ((minY + y) * imageData.width + (minX + x)) * 4;
+
+          dstData[dstIdx] = srcData[srcIdx];
+          dstData[dstIdx + 1] = srcData[srcIdx + 1];
+          dstData[dstIdx + 2] = srcData[srcIdx + 2];
+          dstData[dstIdx + 3] = srcData[srcIdx + 3];
+        }
+      }
     }
 
-    const fullCanvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const fullCtx = fullCanvas.getContext('2d');
-    fullCtx.putImageData(imageData, 0, 0);
-
-    const resultData = outputCtx.getImageData(0, 0, regionWidth, regionHeight);
-    fullCtx.putImageData(resultData, minX, minY);
-
-    return fullCtx.getImageData(0, 0, imageData.width, imageData.height);
+    outputCtx.putImageData(outputData, 0, 0);
+    return outputCtx.getImageData(0, 0, imageData.width, imageData.height);
   };
 
-  // Dewarp wavy Code 128 barcodes
+  // Dewarp wavy Code 128 barcodes - Improved
   const deWarpWaveBarcode = (imageData, analysis) => {
     const { minX, maxX, minY, maxY, regionHeight, horizontalCurve } = analysis;
     const regionWidth = maxX - minX;
 
-    const canvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const ctx = canvas.getContext('2d');
-    ctx.putImageData(imageData, 0, 0);
-
-    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const srcCtx = srcCanvas.getContext('2d');
-    srcCtx.putImageData(imageData, 0, 0);
-
-    const outputCanvas = new OffscreenCanvas(regionWidth, regionHeight);
+    const outputCanvas = new OffscreenCanvas(imageData.width, imageData.height);
     const outputCtx = outputCanvas.getContext('2d');
 
-    // Remove wave distortion by sampling from corrected positions
-    for (let y = 0; y < regionHeight; y++) {
-      const yNorm = y / regionHeight;
-      const stripIdx = Math.min(Math.floor(yNorm * horizontalCurve.midPoints.length), horizontalCurve.midPoints.length - 1);
-      const xOffset = horizontalCurve.midPoints[stripIdx] - horizontalCurve.midPoints[0];
+    outputCtx.putImageData(imageData, 0, 0);
+    const outputData = outputCtx.getImageData(0, 0, imageData.width, imageData.height);
+    const srcData = imageData.data;
+    const dstData = outputData.data;
 
-      const srcImageData = srcCtx.getImageData(minX + xOffset, minY + y, regionWidth, 1);
-      outputCtx.putImageData(srcImageData, 0, y);
+    // Calculate baseline from first strip
+    const baselineX = horizontalCurve.midPoints[0] || minX;
+
+    // Remove wave by realigning each strip
+    for (let y = 0; y < regionHeight; y++) {
+      const yNorm = Math.min(y / regionHeight, 1.0);
+      const stripIdx = Math.floor(yNorm * (horizontalCurve.midPoints.length - 1));
+      const nextIdx = Math.min(stripIdx + 1, horizontalCurve.midPoints.length - 1);
+
+      // Interpolate between strip points
+      const t = (yNorm * (horizontalCurve.midPoints.length - 1)) - stripIdx;
+      const currentX = horizontalCurve.midPoints[stripIdx] * (1 - t) +
+                       horizontalCurve.midPoints[nextIdx] * t;
+
+      const xOffset = currentX - baselineX;
+
+      // Copy pixels from wave position to straight position
+      for (let x = 0; x < regionWidth; x++) {
+        const srcX = Math.floor(minX + x + xOffset);
+        const srcY = minY + y;
+
+        if (srcX >= 0 && srcX < imageData.width && srcY >= 0 && srcY < imageData.height) {
+          const srcIdx = (srcY * imageData.width + srcX) * 4;
+          const dstIdx = ((minY + y) * imageData.width + (minX + x)) * 4;
+
+          dstData[dstIdx] = srcData[srcIdx];
+          dstData[dstIdx + 1] = srcData[srcIdx + 1];
+          dstData[dstIdx + 2] = srcData[srcIdx + 2];
+          dstData[dstIdx + 3] = srcData[srcIdx + 3];
+        }
+      }
     }
 
-    const fullCanvas = new OffscreenCanvas(imageData.width, imageData.height);
-    const fullCtx = fullCanvas.getContext('2d');
-    fullCtx.putImageData(imageData, 0, 0);
-
-    const resultData = outputCtx.getImageData(0, 0, regionWidth, regionHeight);
-    fullCtx.putImageData(resultData, minX, minY);
-
-    return fullCtx.getImageData(0, 0, imageData.width, imageData.height);
+    outputCtx.putImageData(outputData, 0, 0);
+    return outputCtx.getImageData(0, 0, imageData.width, imageData.height);
   };
 
   // Dewarp radial Code 128 barcodes (circular/fan-shaped)
