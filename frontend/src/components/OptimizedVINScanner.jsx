@@ -228,13 +228,16 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         },
         decoder: {
           // Code 128 first (preferred) then Code 39 as fallback
-          readers: ['code_128_reader', 'code_39_reader']
+          readers: ['code_128_reader', 'code_39_reader'],
+          debug: false
         },
-        numOfWorkers: 2,
-        frequency: 15,
         locator: {
-          halfSample: true
-        }
+          halfSample: true,
+          patchSize: 'medium' // Better for curved barcodes
+        },
+        numOfWorkers: 4, // Increased workers for better detection
+        frequency: 20,   // Increased scanning frequency
+        blur: true       // Enable blur detection for better edge detection
       }, (err) => {
         if (err) {
           console.warn('Barcode initialization failed:', err);
