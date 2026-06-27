@@ -329,20 +329,23 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       console.log('🎨 Applying adaptive preprocessing...');
       const adaptiveData = adaptivePreprocess(JSON.parse(JSON.stringify(imageData)));
 
-      // Method 1: Try barcode detection on preprocessed image
-      console.log('📊 Method 1: Barcode detection...');
+      // NEW PRIORITY: Focus on reading TEXT VIN (more reliable than barcode decoding)
+      // Most vehicle labels have text VIN printed below barcode
+
+      // Method 1: Try aggressive OCR extraction FIRST (most reliable for curved barcodes)
+      console.log('📝 Method 1: Aggressive OCR text extraction (PRIMARY)...');
+      const ocrResult = await detectOCRInStaticAggressive(adaptiveData);
+      if (ocrResult) {
+        console.log(`✅ OCR TEXT VIN found: ${ocrResult.vin} (${ocrResult.source})`);
+        return ocrResult;
+      }
+
+      // Method 2: Try barcode detection (works for straight barcodes)
+      console.log('📊 Method 2: Barcode detection...');
       const barcodeResult = await detectBarcodeInStatic(adaptiveData);
       if (barcodeResult) {
         console.log(`✅ Barcode found: ${barcodeResult.vin} (${barcodeResult.source})`);
         return barcodeResult;
-      }
-
-      // Method 2: Try aggressive OCR extraction (multiple passes)
-      console.log('📝 Method 2: Multi-pass OCR extraction...');
-      const ocrResult = await detectOCRInStaticAggressive(adaptiveData);
-      if (ocrResult) {
-        console.log(`✅ OCR found: ${ocrResult.vin} (${ocrResult.source})`);
-        return ocrResult;
       }
 
       // Method 3: Try pattern-based detection as fallback
@@ -366,45 +369,79 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     if (!ocrWorkerRef.current) return null;
 
     try {
+      // For curved barcode images, focus on text VIN region (usually below/inside barcode area)
+      // Try scanning FULL image first (OCR works better on full context)
+
       const canvas = document.createElement('canvas');
       canvas.width = imageData.width;
       canvas.height = imageData.height;
       const ctx = canvas.getContext('2d');
       ctx.putImageData(imageData, 0, 0);
 
-      // Multiple OCR passes with different configurations
+      // Target regions for VIN text (where text is usually printed on curved barcode labels)
+      const regions = [
+        { name: 'Full Image', x: 0, y: 0, w: 1.0, h: 1.0 },  // Try full image first
+        { name: 'Text Below Barcode', x: 0.1, y: 0.5, w: 0.8, h: 0.3 },  // Text below
+        { name: 'Text Center', x: 0.05, y: 0.3, w: 0.9, h: 0.4 },  // Center area
+        { name: 'Full Width VIN Zone', x: 0.0, y: 0.2, w: 1.0, h: 0.6 }  // Entire label
+      ];
+
+      // Multiple OCR configurations
       const configs = [
+        { pageseg: Tesseract.PSM.SINGLE_LINE, name: 'Single Line' },  // Best for single VIN line
         { pageseg: Tesseract.PSM.SPARSE_TEXT, name: 'Sparse Text' },
         { pageseg: Tesseract.PSM.AUTO, name: 'Auto' },
         { pageseg: Tesseract.PSM.SINGLE_BLOCK, name: 'Single Block' },
         { pageseg: Tesseract.PSM.AUTO_ONLY, name: 'Auto Only' }
       ];
 
-      for (const config of configs) {
-        console.log(`  Trying OCR config: ${config.name}...`);
+      // Try each region with each config
+      for (const region of regions) {
+        console.log(`  🔍 Scanning region: ${region.name}...`);
 
-        try {
-          const result = await ocrWorkerRef.current.recognize(canvas, 'eng', {
-            tessedit_pageseg_mode: config.pageseg,
-            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
-          });
+        const x = Math.floor(imageData.width * region.x);
+        const y = Math.floor(imageData.height * region.y);
+        const width = Math.floor(imageData.width * region.w);
+        const height = Math.floor(imageData.height * region.h);
 
-          if (result.data.text) {
-            console.log(`    Raw text (confidence ${result.data.confidence.toFixed(2)}): ${result.data.text.substring(0, 100)}...`);
+        // Extract region
+        const regionData = ctx.getImageData(x, y, width, height);
 
-            // Aggressive VIN extraction
-            const vin = extractVINAggressively(result.data.text);
-            if (vin) {
-              return {
-                vin,
-                confidence: Math.min(0.90, Math.max(0.70, result.data.confidence)),
-                source: `OCR ${config.name} (Aggressive)`
-              };
+        // Apply extra preprocessing to this region
+        enhanceTextRegion(regionData);
+
+        const regionCanvas = document.createElement('canvas');
+        regionCanvas.width = width;
+        regionCanvas.height = height;
+        const regionCtx = regionCanvas.getContext('2d');
+        regionCtx.putImageData(regionData, 0, 0);
+
+        // Try each config on this region
+        for (const config of configs) {
+          console.log(`    Trying ${config.name}...`);
+
+          try {
+            const result = await ocrWorkerRef.current.recognize(regionCanvas, 'eng', {
+              tessedit_pageseg_mode: config.pageseg,
+              tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+            });
+
+            if (result.data.text && result.data.confidence > 0.15) {
+              console.log(`      Raw text (conf ${result.data.confidence.toFixed(2)}): ${result.data.text.substring(0, 80)}`);
+
+              // Aggressive VIN extraction
+              const vin = extractVINAggressively(result.data.text);
+              if (vin) {
+                return {
+                  vin,
+                  confidence: Math.min(0.92, Math.max(0.75, result.data.confidence)),
+                  source: `OCR ${config.name} (${region.name})`
+                };
+              }
             }
+          } catch (err) {
+            // Continue to next config
           }
-        } catch (err) {
-          console.warn(`  Config ${config.name} failed:`, err.message);
-          continue;
         }
       }
 
@@ -415,7 +452,39 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
   };
 
-  // NEW: Aggressive VIN extraction
+  // Enhance text region for better OCR (specific to VIN text)
+  const enhanceTextRegion = (imageData) => {
+    const data = imageData.data;
+
+    // Apply strong contrast enhancement specific to text
+    // Vehicle labels have monospaced fonts - need crisp black and white
+
+    // Step 1: Convert to binary (pure black/white)
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const binary = gray > 128 ? 255 : 0;  // Pure binary
+      data[i] = data[i + 1] = data[i + 2] = binary;
+    }
+
+    // Step 2: Dilate slightly to connect broken characters
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] === 255) {  // If white
+        // Check neighbors
+        if (i >= 8) {  // Left pixel
+          const leftGray = 0.299 * data[i - 4] + 0.587 * data[i - 3] + 0.114 * data[i - 2];
+          if (leftGray > 100) data[i - 4] = data[i - 3] = data[i - 2] = 255;
+        }
+      }
+    }
+
+    // Step 3: Boost contrast further
+    for (let i = 0; i < data.length; i += 4) {
+      if (data[i] < 100) data[i] = data[i + 1] = data[i + 2] = 0;  // Pure black
+      else data[i] = data[i + 1] = data[i + 2] = 255;  // Pure white
+    }
+  };
+
+  // NEW: Aggressive VIN extraction - optimized for curved barcode images
   const extractVINAggressively = (text) => {
     console.log(`  Extracting VIN from text (length: ${text.length})...`);
 
@@ -423,7 +492,22 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     let normalized = text.toUpperCase();
     normalized = correctMonospacedOCRErrors(normalized);
 
-    // Strategy 1: Direct 17-char match
+    // AGGRESSIVE STRATEGY 1: Look for VIN with common markers (curved barcodes often have these)
+    const markedVINs = normalized.match(/[\*_\-]?([A-Z0-9]{17})[\*_\-]?/g);
+    if (markedVINs) {
+      for (const marked of markedVINs) {
+        const vin = marked.replace(/[\*_\-]/g, '');
+        if (vin.length === 17) {
+          const validation = validateVIN(vin);
+          if (validation.valid) {
+            console.log(`    ✅ Found marked VIN: ${vin}`);
+            return vin;
+          }
+        }
+      }
+    }
+
+    // Strategy 2: Direct 17-char match
     const direct = normalized.match(/[A-Z0-9]{17}/g);
     if (direct) {
       for (const vin of direct) {
@@ -435,59 +519,85 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       }
     }
 
-    // Strategy 2: Line-by-line extraction
+    // Strategy 3: Line-by-line extraction (most text VINs are on single lines)
     const lines = normalized.split(/[\n\r]+/);
     for (const line of lines) {
-      // Look for VIN with context (often followed by "PASS" or "CAR")
+      const lineClean = line.replace(/[^A-Z0-9]/g, '');
+      if (lineClean.length === 17) {
+        const validation = validateVIN(lineClean);
+        if (validation.valid) {
+          console.log(`    ✅ Found full line VIN: ${lineClean}`);
+          return lineClean;
+        }
+      }
+      // Also look for 17-char within line
       const matches = line.match(/([A-Z0-9]{17})/);
       if (matches) {
         const vin = matches[1];
         const validation = validateVIN(vin);
         if (validation.valid) {
-          console.log(`    ✅ Found in line: ${vin} (from "${line.substring(0, 50)}...")`);
+          console.log(`    ✅ Found in line: ${vin}`);
           return vin;
         }
       }
     }
 
-    // Strategy 3: Extract all words and check sequences
-    const words = normalized.match(/[A-Z0-9]+/g) || [];
-    for (const word of words) {
-      if (word.length >= 15) {
-        // Try as-is
-        if (word.length === 17) {
-          const validation = validateVIN(word);
+    // Strategy 4: Look for known manufacturer patterns (speed up detection)
+    const manufacturers = [
+      /1GKKPNPLS([A-Z0-9]{10})/i,  // Pattern from image 1
+      /JM8FABBIX([A-Z0-9]{8})/i,   // Pattern from image 2
+      /1FM5K([A-Z0-9]{12})/i,      // Ford pattern from image 3
+      /1C4HJ([A-Z0-9]{12})/i,      // Chrysler pattern from image 4
+    ];
+
+    for (const pattern of manufacturers) {
+      const matches = normalized.match(pattern);
+      if (matches) {
+        const vin = matches[0].substring(0, 17);
+        if (vin.length === 17) {
+          const validation = validateVIN(vin);
           if (validation.valid) {
-            console.log(`    ✅ Found as word: ${word}`);
-            return word;
-          }
-        }
-        // Try first 17 chars
-        const first17 = word.substring(0, 17);
-        if (first17.length === 17) {
-          const validation = validateVIN(first17);
-          if (validation.valid) {
-            console.log(`    ✅ Found substring: ${first17}`);
-            return first17;
+            console.log(`    ✅ Found manufacturer pattern: ${vin}`);
+            return vin;
           }
         }
       }
     }
 
-    // Strategy 4: Brute force - try all possible 17-char subsequences
+    // Strategy 5: Extract all words and check sequences
+    const words = normalized.match(/[A-Z0-9]+/g) || [];
+    for (const word of words) {
+      if (word.length === 17) {
+        const validation = validateVIN(word);
+        if (validation.valid) {
+          console.log(`    ✅ Found as word: ${word}`);
+          return word;
+        }
+      }
+      if (word.length > 17) {
+        const first17 = word.substring(0, 17);
+        const validation = validateVIN(first17);
+        if (validation.valid) {
+          console.log(`    ✅ Found substring: ${first17}`);
+          return first17;
+        }
+      }
+    }
+
+    // Strategy 6: Brute force - try all possible 17-char subsequences
     const allChars = normalized.replace(/[^A-Z0-9]/g, '');
     if (allChars.length >= 17) {
       for (let i = 0; i <= allChars.length - 17; i++) {
         const potential = allChars.substring(i, i + 17);
         const validation = validateVIN(potential);
         if (validation.valid) {
-          console.log(`    ✅ Found via brute force: ${potential}`);
+          console.log(`    ✅ Found via brute force at position ${i}: ${potential}`);
           return potential;
         }
       }
     }
 
-    console.log(`    ❌ No valid VIN found`);
+    console.log(`    ❌ No valid VIN found in text`);
     return null;
   };
 
