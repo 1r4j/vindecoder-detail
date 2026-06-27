@@ -307,6 +307,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       // Focus on the area where VIN text typically appears
       const labelRegions = [
         { x: 0.0, y: 0.5, w: 1.0, h: 0.35, name: 'BelowBarcode' },   // Text below barcode (primary)
+        { x: 0.0, y: 0.05, w: 1.0, h: 0.35, name: 'AboveBarcode' },  // Text above barcode (NEW)
         { x: 0.0, y: 0.45, w: 1.0, h: 0.4, name: 'Label-Center' },   // Full width, label area
         { x: 0.05, y: 0.35, w: 0.9, h: 0.55, name: 'Label-Full' },   // Expanded area
         { x: 0.1, y: 0.3, w: 0.8, h: 0.6, name: 'Label-Expanded' },  // Very expanded search
