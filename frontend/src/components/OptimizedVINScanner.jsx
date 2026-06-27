@@ -469,7 +469,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     return dominantAngle;
   };
 
-  // Detect curved/misshapen VINs and apply perspective correction
+  // Detect and correct various Code 128 barcode distortions
   const detectAndDeWarpCurvedText = (imageData) => {
     const data = imageData.data;
     const width = imageData.width;
@@ -484,31 +484,387 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
     }
 
-    // Find text regions (dark pixels for text detection)
-    const textPixels = [];
-    const threshold = 150; // Text is typically darker than background
+    // Find barcode regions (dark vertical lines)
+    const barcodePixels = [];
+    const threshold = 150; // Barcode bars are typically darker
 
     for (let y = 0; y < height; y++) {
       for (let x = 0; x < width; x++) {
         const idx = y * width + x;
         if (gray[idx] < threshold) {
-          textPixels.push({ x, y, brightness: gray[idx] });
+          barcodePixels.push({ x, y, brightness: gray[idx] });
         }
       }
     }
 
-    if (textPixels.length < 50) return imageData; // Not enough pixels for curve detection
+    if (barcodePixels.length < 50) return imageData; // Not enough pixels
 
-    // Estimate curve using least squares fit (quadratic or cubic)
-    const curvePoints = estimateCurvePoints(textPixels, width, height);
+    // Analyze distortion type
+    const distortionAnalysis = analyzeBarcodeDistortion(barcodePixels, width, height);
 
-    if (curvePoints.curvature > 0.002) {
-      // Significant curvature detected, apply dewarp
-      console.log(`🔀 Curved VIN detected (curvature: ${curvePoints.curvature.toFixed(4)}), applying perspective correction...`);
-      return deWarpImage(imageData, curvePoints);
+    if (distortionAnalysis.detected) {
+      console.log(`🔀 Code 128 Distortion detected (type: ${distortionAnalysis.type}, severity: ${distortionAnalysis.severity.toFixed(2)}%), applying correction...`);
+
+      // Apply appropriate correction based on distortion type
+      let corrected = imageData;
+
+      if (distortionAnalysis.type === 'arc') {
+        corrected = deWarpArcBarcode(imageData, distortionAnalysis);
+      } else if (distortionAnalysis.type === 'wave') {
+        corrected = deWarpWaveBarcode(imageData, distortionAnalysis);
+      } else if (distortionAnalysis.type === 'radial') {
+        corrected = deWarpRadialBarcode(imageData, distortionAnalysis);
+      } else if (distortionAnalysis.type === 'perspective') {
+        corrected = deWarpPerspectiveBarcode(imageData, distortionAnalysis);
+      }
+
+      return corrected;
     }
 
     return imageData;
+  };
+
+  // Analyze barcode distortion type and severity
+  const analyzeBarcodeDistortion = (barcodePixels, width, height) => {
+    if (barcodePixels.length < 50) {
+      return { detected: false, type: 'none', severity: 0 };
+    }
+
+    // Find bounding box and center of mass
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let centerX = 0, centerY = 0;
+
+    for (const pixel of barcodePixels) {
+      minX = Math.min(minX, pixel.x);
+      maxX = Math.max(maxX, pixel.x);
+      minY = Math.min(minY, pixel.y);
+      maxY = Math.max(maxY, pixel.y);
+      centerX += pixel.x;
+      centerY += pixel.y;
+    }
+
+    centerX /= barcodePixels.length;
+    centerY /= barcodePixels.length;
+
+    const regionWidth = maxX - minX;
+    const regionHeight = maxY - minY;
+
+    // Analyze curvature in horizontal direction (arc/wave)
+    const horizontalCurve = analyzeHorizontalCurvature(barcodePixels, minY, maxY, regionHeight);
+
+    // Analyze curvature in vertical direction (perspective/radial)
+    const verticalCurve = analyzeVerticalCurvature(barcodePixels, minX, maxX, regionWidth);
+
+    // Analyze radial distortion (distance from center)
+    const radialDistortion = analyzeRadialDistortion(barcodePixels, centerX, centerY);
+
+    // Determine distortion type based on analysis
+    let distortionType = 'none';
+    let severity = 0;
+
+    if (radialDistortion.strength > 0.08) {
+      distortionType = 'radial';
+      severity = radialDistortion.strength;
+    } else if (horizontalCurve.waveCount > 1 && horizontalCurve.amplitude > 0.05) {
+      distortionType = 'wave';
+      severity = horizontalCurve.amplitude;
+    } else if (horizontalCurve.curvature > 0.004) {
+      distortionType = 'arc';
+      severity = horizontalCurve.curvature;
+    } else if (verticalCurve.skewness > 0.1) {
+      distortionType = 'perspective';
+      severity = verticalCurve.skewness;
+    }
+
+    return {
+      detected: distortionType !== 'none',
+      type: distortionType,
+      severity: severity * 100,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      centerX,
+      centerY,
+      regionWidth,
+      regionHeight,
+      horizontalCurve,
+      verticalCurve,
+      radialDistortion
+    };
+  };
+
+  // Analyze horizontal curvature (arc and wave patterns)
+  const analyzeHorizontalCurvature = (pixels, minY, maxY, regionHeight) => {
+    const stripCount = Math.max(5, Math.floor(regionHeight / 20));
+    const stripHeight = regionHeight / stripCount;
+    const midPoints = [];
+
+    for (let i = 0; i < stripCount; i++) {
+      const stripMinY = minY + i * stripHeight;
+      const stripMaxY = stripMinY + stripHeight;
+
+      let midX = 0;
+      let count = 0;
+
+      for (const pixel of pixels) {
+        if (pixel.y >= stripMinY && pixel.y < stripMaxY) {
+          midX += pixel.x;
+          count++;
+        }
+      }
+
+      if (count > 0) {
+        midPoints.push(midX / count);
+      }
+    }
+
+    // Calculate curvature and wave characteristics
+    let curvature = 0;
+    let maxDeviation = 0;
+    let waveCount = 0;
+    let signChanges = 0;
+
+    for (let i = 1; i < midPoints.length - 1; i++) {
+      const deviation = midPoints[i] - (midPoints[i - 1] + midPoints[i + 1]) / 2;
+      const absDeviation = Math.abs(deviation);
+      maxDeviation = Math.max(maxDeviation, absDeviation);
+      curvature += absDeviation;
+
+      if (i > 1) {
+        const prevDeviation = midPoints[i - 1] - (midPoints[i - 2] + midPoints[i]) / 2;
+        if ((deviation > 0 && prevDeviation < 0) || (deviation < 0 && prevDeviation > 0)) {
+          signChanges++;
+        }
+      }
+    }
+
+    curvature /= Math.max(1, midPoints.length - 2);
+    waveCount = signChanges;
+    const amplitude = maxDeviation / Math.max(1, regionHeight);
+
+    return { curvature, waveCount, amplitude, midPoints };
+  };
+
+  // Analyze vertical curvature (perspective/skew)
+  const analyzeVerticalCurvature = (pixels, minX, maxX, regionWidth) => {
+    const stripCount = Math.max(5, Math.floor(regionWidth / 20));
+    const stripWidth = regionWidth / stripCount;
+    const midPoints = [];
+
+    for (let i = 0; i < stripCount; i++) {
+      const stripMinX = minX + i * stripWidth;
+      const stripMaxX = stripMinX + stripWidth;
+
+      let midY = 0;
+      let count = 0;
+
+      for (const pixel of pixels) {
+        if (pixel.x >= stripMinX && pixel.x < stripMaxX) {
+          midY += pixel.y;
+          count++;
+        }
+      }
+
+      if (count > 0) {
+        midPoints.push(midY / count);
+      }
+    }
+
+    // Calculate skewness and tilt
+    let skewness = 0;
+    const yRange = Math.max(...midPoints) - Math.min(...midPoints);
+    if (yRange > 0) {
+      skewness = yRange / Math.max(1, regionWidth);
+    }
+
+    return { skewness, midPoints, yRange };
+  };
+
+  // Analyze radial distortion (distance from center)
+  const analyzeRadialDistortion = (pixels, centerX, centerY) => {
+    let radialSum = 0;
+    let radialVariance = 0;
+
+    for (const pixel of pixels) {
+      const dx = pixel.x - centerX;
+      const dy = pixel.y - centerY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      radialSum += distance;
+    }
+
+    const avgRadius = radialSum / Math.max(1, pixels.length);
+
+    for (const pixel of pixels) {
+      const dx = pixel.x - centerX;
+      const dy = pixel.y - centerY;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      radialVariance += Math.pow(distance - avgRadius, 2);
+    }
+
+    const strength = Math.sqrt(radialVariance / Math.max(1, pixels.length)) / Math.max(1, avgRadius);
+
+    return { strength, avgRadius };
+  };
+
+  // Dewarp arc-shaped Code 128 barcodes
+  const deWarpArcBarcode = (imageData, analysis) => {
+    const canvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const ctx = canvas.getContext('2d');
+
+    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.putImageData(imageData, 0, 0);
+
+    const { minX, maxX, minY, maxY, regionWidth, regionHeight, horizontalCurve } = analysis;
+
+    // Apply polynomial curve correction
+    const outputCanvas = new OffscreenCanvas(regionWidth, regionHeight * 1.1);
+    const outputCtx = outputCanvas.getContext('2d');
+
+    for (let y = 0; y < regionHeight; y++) {
+      const yNorm = y / regionHeight;
+      const curveOffset = horizontalCurve.midPoints[Math.floor(yNorm * (horizontalCurve.midPoints.length - 1))] || 0;
+      const baseX = minX + curveOffset - horizontalCurve.midPoints[0];
+
+      const srcImageData = srcCtx.getImageData(baseX, minY + y, regionWidth, 1);
+      outputCtx.putImageData(srcImageData, 0, y);
+    }
+
+    const fullCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const fullCtx = fullCanvas.getContext('2d');
+    fullCtx.putImageData(imageData, 0, 0);
+
+    const resultData = outputCtx.getImageData(0, 0, regionWidth, regionHeight);
+    fullCtx.putImageData(resultData, minX, minY);
+
+    return fullCtx.getImageData(0, 0, imageData.width, imageData.height);
+  };
+
+  // Dewarp wavy Code 128 barcodes
+  const deWarpWaveBarcode = (imageData, analysis) => {
+    const { minX, maxX, minY, maxY, regionHeight, horizontalCurve } = analysis;
+    const regionWidth = maxX - minX;
+
+    const canvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(imageData, 0, 0);
+
+    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.putImageData(imageData, 0, 0);
+
+    const outputCanvas = new OffscreenCanvas(regionWidth, regionHeight);
+    const outputCtx = outputCanvas.getContext('2d');
+
+    // Remove wave distortion by sampling from corrected positions
+    for (let y = 0; y < regionHeight; y++) {
+      const yNorm = y / regionHeight;
+      const stripIdx = Math.min(Math.floor(yNorm * horizontalCurve.midPoints.length), horizontalCurve.midPoints.length - 1);
+      const xOffset = horizontalCurve.midPoints[stripIdx] - horizontalCurve.midPoints[0];
+
+      const srcImageData = srcCtx.getImageData(minX + xOffset, minY + y, regionWidth, 1);
+      outputCtx.putImageData(srcImageData, 0, y);
+    }
+
+    const fullCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const fullCtx = fullCanvas.getContext('2d');
+    fullCtx.putImageData(imageData, 0, 0);
+
+    const resultData = outputCtx.getImageData(0, 0, regionWidth, regionHeight);
+    fullCtx.putImageData(resultData, minX, minY);
+
+    return fullCtx.getImageData(0, 0, imageData.width, imageData.height);
+  };
+
+  // Dewarp radial Code 128 barcodes (circular/fan-shaped)
+  const deWarpRadialBarcode = (imageData, analysis) => {
+    const { minX, maxX, minY, maxY, centerX, centerY, radialDistortion } = analysis;
+    const regionWidth = maxX - minX;
+    const regionHeight = maxY - minY;
+
+    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.putImageData(imageData, 0, 0);
+
+    const outputCanvas = new OffscreenCanvas(regionWidth, regionHeight);
+    const outputCtx = outputCanvas.getContext('2d');
+    const outputData = outputCtx.createImageData(regionWidth, regionHeight);
+    const data = outputData.data;
+
+    // Apply inverse polar transformation (unwrap radial to linear)
+    const targetRadius = radialDistortion.avgRadius;
+
+    for (let y = 0; y < regionHeight; y++) {
+      for (let x = 0; x < regionWidth; x++) {
+        const px = minX + x;
+        const py = minY + y;
+
+        const dx = px - centerX;
+        const dy = py - centerY;
+        const angle = Math.atan2(dy, dx);
+        const radius = Math.sqrt(dx * dx + dy * dy);
+
+        // Normalize radius to target
+        const normalizedRadius = (radius / Math.max(1, targetRadius)) * regionHeight;
+        const normalizedAngle = ((angle + Math.PI) / (2 * Math.PI)) * regionWidth;
+
+        const srcX = Math.floor(normalizedAngle) % imageData.width;
+        const srcY = Math.floor(normalizedRadius) % imageData.height;
+
+        if (srcX >= 0 && srcX < imageData.width && srcY >= 0 && srcY < imageData.height) {
+          const srcPixelIdx = (srcY * imageData.width + srcX) * 4;
+          const dstPixelIdx = (y * regionWidth + x) * 4;
+
+          data[dstPixelIdx] = imageData.data[srcPixelIdx];
+          data[dstPixelIdx + 1] = imageData.data[srcPixelIdx + 1];
+          data[dstPixelIdx + 2] = imageData.data[srcPixelIdx + 2];
+          data[dstPixelIdx + 3] = imageData.data[srcPixelIdx + 3];
+        }
+      }
+    }
+
+    outputCtx.putImageData(outputData, 0, 0);
+
+    const fullCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const fullCtx = fullCanvas.getContext('2d');
+    fullCtx.putImageData(imageData, 0, 0);
+    fullCtx.putImageData(outputData, minX, minY);
+
+    return fullCtx.getImageData(0, 0, imageData.width, imageData.height);
+  };
+
+  // Dewarp perspective-skewed Code 128 barcodes
+  const deWarpPerspectiveBarcode = (imageData, analysis) => {
+    const { minX, minY, regionHeight, verticalCurve } = analysis;
+    const regionWidth = analysis.maxX - minX;
+
+    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.putImageData(imageData, 0, 0);
+
+    const outputCanvas = new OffscreenCanvas(regionWidth, regionHeight);
+    const outputCtx = outputCanvas.getContext('2d');
+
+    // Apply skew correction based on vertical curve
+    for (let x = 0; x < regionWidth; x++) {
+      const xNorm = x / regionWidth;
+      const stripIdx = Math.min(Math.floor(xNorm * verticalCurve.midPoints.length), verticalCurve.midPoints.length - 1);
+      const yOffset = verticalCurve.midPoints[stripIdx] - verticalCurve.midPoints[0];
+
+      const srcImageData = srcCtx.getImageData(minX + x, minY + yOffset, 1, regionHeight);
+      outputCtx.putImageData(srcImageData, x, 0);
+    }
+
+    const fullCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const fullCtx = fullCanvas.getContext('2d');
+    fullCtx.putImageData(imageData, 0, 0);
+
+    const resultData = outputCtx.getImageData(0, 0, regionWidth, regionHeight);
+    fullCtx.putImageData(resultData, minX, minY);
+
+    return fullCtx.getImageData(0, 0, imageData.width, imageData.height);
   };
 
   // Estimate curve points from text region
