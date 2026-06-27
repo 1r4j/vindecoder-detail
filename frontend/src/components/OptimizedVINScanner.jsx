@@ -250,10 +250,29 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         Quagga.onDetected((result) => {
           if (!scanningRef.current || !result.codeResult) return;
 
-          const code = result.codeResult.code?.trim();
+          let code = result.codeResult.code?.trim();
           const barcodeFormat = result.codeResult.format || 'Unknown';
 
           if (code) {
+            // Clean up Code 39 and Code 128 specific issues
+            if (barcodeFormat.includes('code_39')) {
+              // Code 39 specific cleaning
+              code = code.replace(/[^A-Z0-9\-\.\$\/\+\%]/g, ''); // Code 39 charset
+              // Fix common OCR confusions in Code 39
+              code = code.replace(/O/g, '0'); // O → 0
+              code = code.replace(/I/g, '1'); // I → 1
+              code = code.replace(/l/g, '1'); // l → 1
+            } else if (barcodeFormat.includes('code_128')) {
+              // Code 128 specific cleaning
+              code = code.replace(/[^A-Z0-9]/g, '').toUpperCase();
+              // Fix common Code 128 OCR errors
+              code = code.replace(/O/g, '0');
+              code = code.replace(/I/g, '1');
+              code = code.replace(/l/g, '1');
+              code = code.replace(/S/g, '5');
+              code = code.replace(/Z/g, '2');
+            }
+
             // Determine barcode type for logging
             let barcodeType = 'Barcode';
             if (barcodeFormat.includes('code_128')) {
@@ -261,6 +280,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
             } else if (barcodeFormat.includes('code_39')) {
               barcodeType = 'Code 39 Barcode';
             }
+
+            console.log(`📊 ${barcodeType} detected: ${code} (format: ${barcodeFormat})`);
 
             // Validate the detected VIN
             const validation = validateVIN(code);
@@ -689,16 +710,17 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     let distortionType = 'none';
     let severity = 0;
 
-    if (radialDistortion.strength > 0.06) {
+    // Lowered thresholds for better detection of all distortions
+    if (radialDistortion.strength > 0.04) {
       distortionType = 'radial';
       severity = radialDistortion.strength;
-    } else if (horizontalCurve.waveCount > 1 && horizontalCurve.amplitude > 0.03) {
+    } else if (horizontalCurve.waveCount > 1 && horizontalCurve.amplitude > 0.02) {
       distortionType = 'wave';
       severity = horizontalCurve.amplitude;
-    } else if (horizontalCurve.curvature > 0.002) {
+    } else if (horizontalCurve.curvature > 0.001) {
       distortionType = 'arc';
       severity = horizontalCurve.curvature;
-    } else if (verticalCurve.skewness > 0.08) {
+    } else if (verticalCurve.skewness > 0.06) {
       distortionType = 'perspective';
       severity = verticalCurve.skewness;
     }
