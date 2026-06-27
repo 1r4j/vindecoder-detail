@@ -278,6 +278,71 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     });
   };
 
+  // Scan VIN label text directly (fallback for curved barcodes)
+  const scanVINLabelText = async (canvas, video) => {
+    if (!ocrWorkerRef.current) return null;
+
+    try {
+      // Focus on the area where VIN text typically appears (middle-lower part of label)
+      const labelRegions = [
+        { x: 0.0, y: 0.45, w: 1.0, h: 0.4, name: 'Label-Center' },  // Full width, label area
+        { x: 0.05, y: 0.4, w: 0.9, h: 0.5, name: 'Label-Full' },    // Expanded area
+      ];
+
+      for (const region of labelRegions) {
+        const x = Math.floor(canvas.width * region.x);
+        const y = Math.floor(canvas.height * region.y);
+        const width = Math.floor(canvas.width * region.w);
+        const height = Math.floor(canvas.height * region.h);
+
+        const ctx = canvas.getContext('2d');
+        const imageData = ctx.getImageData(x, y, width, height);
+
+        // Optimize for VIN text recognition
+        optimizeForVINText(imageData);
+
+        const regionCanvas = document.createElement('canvas');
+        regionCanvas.width = width;
+        regionCanvas.height = height;
+        const regionCtx = regionCanvas.getContext('2d');
+        regionCtx.putImageData(imageData, 0, 0);
+
+        try {
+          const result = await ocrWorkerRef.current.recognize(regionCanvas, 'eng', {
+            tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT, // Better for labels with text
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+          });
+
+          if (result.data.text && result.data.confidence > 0.35) {
+            const text = result.data.text.replace(/[^A-Z0-9]/g, '').toUpperCase();
+            const vins = text.match(/[A-Z0-9]{17}/g) || [];
+
+            for (const vin of vins) {
+              if (validateVIN(vin).valid) {
+                return { vin, source: `Label OCR (${region.name})`, confidence: result.data.confidence };
+              }
+            }
+
+            // Try partial matches
+            if (text.length >= 15) {
+              const partial = text.substring(0, 17).padEnd(17, '0');
+              if (validateVIN(partial).valid) {
+                return { vin: partial, source: `Label OCR Partial (${region.name})`, confidence: result.data.confidence * 0.8 };
+              }
+            }
+          }
+        } catch (err) {
+          continue;
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Label OCR error:', err);
+      return null;
+    }
+  };
+
   const scanVINWithOCR = async () => {
     if (!scanningRef.current || !videoRef.current || !canvasRef.current || !ocrWorkerRef.current) return;
 
@@ -360,6 +425,13 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         } catch (err) {
           continue;
         }
+      }
+
+      // Fallback: Try reading VIN text directly from label (for curved barcodes)
+      const labelVIN = await scanVINLabelText(canvas, video);
+      if (labelVIN) {
+        handleVINDetection(labelVIN.vin, labelVIN.source);
+        return;
       }
 
       if (scanningRef.current) {
