@@ -469,6 +469,165 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     return dominantAngle;
   };
 
+  // Detect curved/misshapen VINs and apply perspective correction
+  const detectAndDeWarpCurvedText = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Convert to grayscale for curve detection
+    const gray = new Uint8ClampedArray(width * height);
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i];
+      const g = data[i + 1];
+      const b = data[i + 2];
+      gray[i / 4] = 0.299 * r + 0.587 * g + 0.114 * b;
+    }
+
+    // Find text regions (dark pixels for text detection)
+    const textPixels = [];
+    const threshold = 150; // Text is typically darker than background
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const idx = y * width + x;
+        if (gray[idx] < threshold) {
+          textPixels.push({ x, y, brightness: gray[idx] });
+        }
+      }
+    }
+
+    if (textPixels.length < 50) return imageData; // Not enough pixels for curve detection
+
+    // Estimate curve using least squares fit (quadratic or cubic)
+    const curvePoints = estimateCurvePoints(textPixels, width, height);
+
+    if (curvePoints.curvature > 0.002) {
+      // Significant curvature detected, apply dewarp
+      console.log(`🔀 Curved VIN detected (curvature: ${curvePoints.curvature.toFixed(4)}), applying perspective correction...`);
+      return deWarpImage(imageData, curvePoints);
+    }
+
+    return imageData;
+  };
+
+  // Estimate curve points from text region
+  const estimateCurvePoints = (textPixels, width, height) => {
+    if (textPixels.length < 3) {
+      return { points: [], curvature: 0, topLeft: null, topRight: null, bottomLeft: null, bottomRight: null };
+    }
+
+    // Find bounding box of text region
+    let minX = Infinity, maxX = -Infinity;
+    let minY = Infinity, maxY = -Infinity;
+    let minBrightness = Infinity;
+
+    for (const pixel of textPixels) {
+      minX = Math.min(minX, pixel.x);
+      maxX = Math.max(maxX, pixel.x);
+      minY = Math.min(minY, pixel.y);
+      maxY = Math.max(maxY, pixel.y);
+      minBrightness = Math.min(minBrightness, pixel.brightness);
+    }
+
+    const centerX = (minX + maxX) / 2;
+    const regionHeight = maxY - minY;
+
+    // Divide region into vertical strips to detect curvature
+    const stripCount = 5;
+    const stripWidth = (maxX - minX) / stripCount;
+    const curveHeights = [];
+
+    for (let i = 0; i < stripCount; i++) {
+      const stripMinX = minX + i * stripWidth;
+      const stripMaxX = stripMinX + stripWidth;
+
+      let stripMinY = Infinity;
+      for (const pixel of textPixels) {
+        if (pixel.x >= stripMinX && pixel.x < stripMaxX) {
+          stripMinY = Math.min(stripMinY, pixel.y);
+        }
+      }
+
+      curveHeights.push(stripMinY === Infinity ? minY : stripMinY);
+    }
+
+    // Calculate curvature (deviation from straight line)
+    let curvature = 0;
+    for (let i = 1; i < curveHeights.length - 1; i++) {
+      const dy = Math.abs(curveHeights[i] - (curveHeights[i - 1] + curveHeights[i + 1]) / 2);
+      curvature += dy;
+    }
+    curvature /= (curveHeights.length - 2);
+
+    return {
+      points: curveHeights,
+      curvature: curvature / regionHeight,
+      minX,
+      maxX,
+      minY,
+      maxY,
+      centerX,
+      topLeft: { x: minX, y: minY },
+      topRight: { x: maxX, y: minY },
+      bottomLeft: { x: minX, y: maxY },
+      bottomRight: { x: maxX, y: maxY }
+    };
+  };
+
+  // Apply perspective transformation to dewarp curved images
+  const deWarpImage = (imageData, curvePoints) => {
+    const canvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const ctx = canvas.getContext('2d');
+
+    // Create temporary canvas from imageData
+    const srcCanvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const srcCtx = srcCanvas.getContext('2d');
+    srcCtx.putImageData(imageData, 0, 0);
+
+    // Apply simple perspective correction using CSS-like transforms
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Extract the curved region
+    const regionX = Math.floor(curvePoints.minX);
+    const regionY = Math.floor(curvePoints.minY);
+    const regionW = Math.floor(curvePoints.maxX - curvePoints.minX);
+    const regionH = Math.floor(curvePoints.maxY - curvePoints.minY);
+
+    // Create output canvas for dewarped region
+    const outputCanvas = new OffscreenCanvas(regionW, regionH * 1.2);
+    const outputCtx = outputCanvas.getContext('2d');
+
+    // Apply vertical stretching based on curvature
+    const stretchFactor = 1 + (curvePoints.curvature * 50); // Amplify stretch effect
+
+    for (let y = 0; y < regionH; y++) {
+      const srcY = regionY + y;
+      const xOffset = Math.sin((y / regionH) * Math.PI) * (regionW * curvePoints.curvature);
+
+      const srcImageData = srcCtx.getImageData(
+        regionX + xOffset,
+        srcY,
+        regionW,
+        1
+      );
+
+      outputCtx.putImageData(srcImageData, 0, Math.floor(y * stretchFactor));
+    }
+
+    // Convert back to ImageData
+    const resultData = outputCtx.getImageData(0, 0, outputCanvas.width, Math.floor(regionH * stretchFactor));
+
+    // Place dewarped region back into full image
+    const fullCanvas = new OffscreenCanvas(width, height);
+    const fullCtx = fullCanvas.getContext('2d');
+    fullCtx.putImageData(imageData, 0, 0);
+    fullCtx.putImageData(resultData, regionX, regionY);
+
+    return fullCtx.getImageData(0, 0, width, height);
+  };
+
   // Rotate image canvas if needed
   const rotateImageData = (imageData, angle) => {
     if (Math.abs(angle) < 2) return imageData; // Skip if rotation is minimal
@@ -500,9 +659,12 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   };
 
   const optimizeForVINText = (imageData) => {
-    const data = imageData.data;
-    const width = imageData.width;
-    const height = imageData.height;
+    // First, detect and dewarp curved/misshapen VINs
+    const deWarpedImage = detectAndDeWarpCurvedText(imageData);
+
+    const data = deWarpedImage.data;
+    const width = deWarpedImage.width;
+    const height = deWarpedImage.height;
 
     // Convert to grayscale
     const gray = new Uint8ClampedArray(width * height);
