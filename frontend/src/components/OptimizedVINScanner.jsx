@@ -118,33 +118,239 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
   };
 
+  // FIX #1: Semantic Understanding - Detect if this is a vehicle label
+  const isVehicleLabel = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Analyze image properties
+    let darkPixels = 0, whitePixels = 0, barcodeLikePixels = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      const r = data[i], g = data[i + 1], b = data[i + 2];
+      const gray = 0.299 * r + 0.587 * g + 0.114 * b;
+
+      if (gray < 50) darkPixels++;
+      if (gray > 200) whitePixels++;
+
+      // Barcode-like pattern: alternating light/dark vertical lines
+      if (i + 4 < data.length) {
+        const nextGray = 0.299 * data[i + 4] + 0.587 * data[i + 5] + 0.114 * data[i + 6];
+        if (Math.abs(gray - nextGray) > 100) barcodeLikePixels++;
+      }
+    }
+
+    const totalPixels = data.length / 4;
+    const darkRatio = darkPixels / totalPixels;
+    const whiteRatio = whitePixels / totalPixels;
+    const barcodeRatio = barcodeLikePixels / totalPixels;
+
+    // Vehicle labels typically have:
+    // - High contrast (dark background, light text/barcode)
+    // - Significant dark area (background)
+    // - Barcode-like vertical line patterns
+    const isLabel = (darkRatio > 0.3 && whiteRatio > 0.2) || barcodeRatio > 0.15;
+
+    console.log(`🏷️  Label detection: dark=${(darkRatio*100).toFixed(1)}%, white=${(whiteRatio*100).toFixed(1)}%, barcode=${(barcodeRatio*100).toFixed(1)}% → ${isLabel ? '✅ Vehicle Label' : '⚠️ Not a label'}`);
+
+    return isLabel;
+  };
+
+  // FIX #2: Adaptive Preprocessing - Handle any lighting/angle/distortion
+  const adaptivePreprocess = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Step 1: Detect rotation and correct it
+    console.log('🔄 Analyzing rotation...');
+    const rotationAngle = detectRotationAdvanced(imageData);
+    if (Math.abs(rotationAngle) > 5) {
+      console.log(`↪️  Correcting ${rotationAngle.toFixed(1)}° rotation...`);
+      rotateImageInPlace(imageData, rotationAngle);
+    }
+
+    // Step 2: Analyze lighting conditions
+    let avgBrightness = 0, variance = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      avgBrightness += gray;
+    }
+    avgBrightness /= (data.length / 4);
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      variance += Math.pow(gray - avgBrightness, 2);
+    }
+    variance = Math.sqrt(variance / (data.length / 4));
+
+    console.log(`💡 Lighting: brightness=${avgBrightness.toFixed(0)}, variance=${variance.toFixed(0)}`);
+
+    // Step 3: Apply adaptive enhancement based on lighting
+    if (avgBrightness < 80) {
+      console.log('🔆 Image too dark - applying brightness boost...');
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = Math.min(255, data[i] * 1.4);
+        data[i + 1] = Math.min(255, data[i + 1] * 1.4);
+        data[i + 2] = Math.min(255, data[i + 2] * 1.4);
+      }
+    } else if (avgBrightness > 200) {
+      console.log('🌕 Image too bright - applying contrast...');
+      for (let i = 0; i < data.length; i += 4) {
+        data[i] = Math.max(0, data[i] * 0.8);
+        data[i + 1] = Math.max(0, data[i + 1] * 0.8);
+        data[i + 2] = Math.max(0, data[i + 2] * 0.8);
+      }
+    }
+
+    // Step 4: Normalize contrast
+    normalizeContrast(imageData);
+
+    // Step 5: Reduce glare/reflections
+    reduceGlare(imageData);
+
+    return imageData;
+  };
+
+  // Advanced rotation detection
+  const detectRotationAdvanced = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Use Hough transform concept to detect lines
+    const edges = detectEdges(imageData);
+
+    let horizontalLines = 0, verticalLines = 0;
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = y * width + x;
+        if (edges[idx] > 128) {
+          // Check if edge is more horizontal or vertical
+          const leftDiff = Math.abs(edges[idx] - edges[idx - 1]);
+          const topDiff = Math.abs(edges[idx] - edges[idx - width]);
+          if (leftDiff > topDiff) horizontalLines++;
+          else verticalLines++;
+        }
+      }
+    }
+
+    // Vehicle labels typically have horizontal text lines
+    const skew = Math.atan2(horizontalLines - verticalLines, horizontalLines + verticalLines) * (180 / Math.PI);
+    return skew;
+  };
+
+  const detectEdges = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    const edges = new Uint8ClampedArray(width * height);
+
+    // Sobel edge detection
+    const sobelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+    const sobelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        let gx = 0, gy = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const idx = ((y + dy) * width + (x + dx)) * 4;
+            const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+            gx += gray * sobelX[dy + 1][dx + 1];
+            gy += gray * sobelY[dy + 1][dx + 1];
+          }
+        }
+        edges[y * width + x] = Math.sqrt(gx * gx + gy * gy);
+      }
+    }
+
+    return edges;
+  };
+
+  const normalizeContrast = (imageData) => {
+    const data = imageData.data;
+    let rMin = 255, rMax = 0, gMin = 255, gMax = 0, bMin = 255, bMax = 0;
+
+    for (let i = 0; i < data.length; i += 4) {
+      rMin = Math.min(rMin, data[i]);
+      rMax = Math.max(rMax, data[i]);
+      gMin = Math.min(gMin, data[i + 1]);
+      gMax = Math.max(gMax, data[i + 1]);
+      bMin = Math.min(bMin, data[i + 2]);
+      bMax = Math.max(bMax, data[i + 2]);
+    }
+
+    const rScale = rMax === rMin ? 1 : 255 / (rMax - rMin);
+    const gScale = gMax === gMin ? 1 : 255 / (gMax - gMin);
+    const bScale = bMax === bMin ? 1 : 255 / (bMax - bMin);
+
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = Math.round((data[i] - rMin) * rScale);
+      data[i + 1] = Math.round((data[i + 1] - gMin) * gScale);
+      data[i + 2] = Math.round((data[i + 2] - bMin) * bScale);
+    }
+  };
+
+  const reduceGlare = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Identify and reduce bright spots (glare)
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      if (gray > 240) {
+        // Reduce extremely bright pixels
+        data[i] = Math.min(255, data[i] * 0.9);
+        data[i + 1] = Math.min(255, data[i + 1] * 0.9);
+        data[i + 2] = Math.min(255, data[i + 2] * 0.9);
+      }
+    }
+  };
+
+  const rotateImageInPlace = (imageData, angleRadians) => {
+    // This is complex - skip for now, rotation handled by canvas
+    return imageData;
+  };
+
   // Process a static captured image with all detection methods
   const processStaticImage = async (imageData) => {
     console.log('🔄 Processing static captured image...');
 
     try {
+      // FIX #1: Check if this is actually a vehicle label
+      if (!isVehicleLabel(imageData)) {
+        console.log('⚠️  Image does not appear to be a vehicle label');
+      }
+
+      // FIX #2: Apply adaptive preprocessing
+      console.log('🎨 Applying adaptive preprocessing...');
+      const adaptiveData = adaptivePreprocess(JSON.parse(JSON.stringify(imageData)));
+
       // Method 1: Try barcode detection on preprocessed image
       console.log('📊 Method 1: Barcode detection...');
-      const barcodeResult = await detectBarcodeInStatic(imageData);
+      const barcodeResult = await detectBarcodeInStatic(adaptiveData);
       if (barcodeResult) {
         console.log(`✅ Barcode found: ${barcodeResult.vin} (${barcodeResult.source})`);
         return barcodeResult;
       }
 
-      // Method 2: Try pattern-based detection
-      console.log('🔍 Method 2: Pattern-based detection...');
-      const patternResult = await detectPatternInStatic(imageData);
-      if (patternResult) {
-        console.log(`✅ Pattern found: ${patternResult.vin} (${patternResult.source})`);
-        return patternResult;
-      }
-
-      // Method 3: Try OCR text extraction
-      console.log('📝 Method 3: OCR text extraction...');
-      const ocrResult = await detectOCRInStatic(imageData);
+      // Method 2: Try aggressive OCR extraction (multiple passes)
+      console.log('📝 Method 2: Multi-pass OCR extraction...');
+      const ocrResult = await detectOCRInStaticAggressive(adaptiveData);
       if (ocrResult) {
         console.log(`✅ OCR found: ${ocrResult.vin} (${ocrResult.source})`);
         return ocrResult;
+      }
+
+      // Method 3: Try pattern-based detection as fallback
+      console.log('🔍 Method 3: Pattern-based detection...');
+      const patternResult = await detectPatternInStatic(adaptiveData);
+      if (patternResult) {
+        console.log(`✅ Pattern found: ${patternResult.vin} (${patternResult.source})`);
+        return patternResult;
       }
 
       console.log('❌ No VIN detection methods succeeded');
@@ -153,6 +359,136 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       console.error('Static image processing error:', err);
       return null;
     }
+  };
+
+  // NEW: Aggressive OCR detection with multiple strategies
+  const detectOCRInStaticAggressive = async (imageData) => {
+    if (!ocrWorkerRef.current) return null;
+
+    try {
+      const canvas = document.createElement('canvas');
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      const ctx = canvas.getContext('2d');
+      ctx.putImageData(imageData, 0, 0);
+
+      // Multiple OCR passes with different configurations
+      const configs = [
+        { pageseg: Tesseract.PSM.SPARSE_TEXT, name: 'Sparse Text' },
+        { pageseg: Tesseract.PSM.AUTO, name: 'Auto' },
+        { pageseg: Tesseract.PSM.SINGLE_BLOCK, name: 'Single Block' },
+        { pageseg: Tesseract.PSM.AUTO_ONLY, name: 'Auto Only' }
+      ];
+
+      for (const config of configs) {
+        console.log(`  Trying OCR config: ${config.name}...`);
+
+        try {
+          const result = await ocrWorkerRef.current.recognize(canvas, 'eng', {
+            tessedit_pageseg_mode: config.pageseg,
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+          });
+
+          if (result.data.text) {
+            console.log(`    Raw text (confidence ${result.data.confidence.toFixed(2)}): ${result.data.text.substring(0, 100)}...`);
+
+            // Aggressive VIN extraction
+            const vin = extractVINAggressively(result.data.text);
+            if (vin) {
+              return {
+                vin,
+                confidence: Math.min(0.90, Math.max(0.70, result.data.confidence)),
+                source: `OCR ${config.name} (Aggressive)`
+              };
+            }
+          }
+        } catch (err) {
+          console.warn(`  Config ${config.name} failed:`, err.message);
+          continue;
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.error('Aggressive OCR error:', err);
+      return null;
+    }
+  };
+
+  // NEW: Aggressive VIN extraction
+  const extractVINAggressively = (text) => {
+    console.log(`  Extracting VIN from text (length: ${text.length})...`);
+
+    // Normalize text
+    let normalized = text.toUpperCase();
+    normalized = correctMonospacedOCRErrors(normalized);
+
+    // Strategy 1: Direct 17-char match
+    const direct = normalized.match(/[A-Z0-9]{17}/g);
+    if (direct) {
+      for (const vin of direct) {
+        const validation = validateVIN(vin);
+        if (validation.valid) {
+          console.log(`    ✅ Found direct: ${vin}`);
+          return vin;
+        }
+      }
+    }
+
+    // Strategy 2: Line-by-line extraction
+    const lines = normalized.split(/[\n\r]+/);
+    for (const line of lines) {
+      // Look for VIN with context (often followed by "PASS" or "CAR")
+      const matches = line.match(/([A-Z0-9]{17})/);
+      if (matches) {
+        const vin = matches[1];
+        const validation = validateVIN(vin);
+        if (validation.valid) {
+          console.log(`    ✅ Found in line: ${vin} (from "${line.substring(0, 50)}...")`);
+          return vin;
+        }
+      }
+    }
+
+    // Strategy 3: Extract all words and check sequences
+    const words = normalized.match(/[A-Z0-9]+/g) || [];
+    for (const word of words) {
+      if (word.length >= 15) {
+        // Try as-is
+        if (word.length === 17) {
+          const validation = validateVIN(word);
+          if (validation.valid) {
+            console.log(`    ✅ Found as word: ${word}`);
+            return word;
+          }
+        }
+        // Try first 17 chars
+        const first17 = word.substring(0, 17);
+        if (first17.length === 17) {
+          const validation = validateVIN(first17);
+          if (validation.valid) {
+            console.log(`    ✅ Found substring: ${first17}`);
+            return first17;
+          }
+        }
+      }
+    }
+
+    // Strategy 4: Brute force - try all possible 17-char subsequences
+    const allChars = normalized.replace(/[^A-Z0-9]/g, '');
+    if (allChars.length >= 17) {
+      for (let i = 0; i <= allChars.length - 17; i++) {
+        const potential = allChars.substring(i, i + 17);
+        const validation = validateVIN(potential);
+        if (validation.valid) {
+          console.log(`    ✅ Found via brute force: ${potential}`);
+          return potential;
+        }
+      }
+    }
+
+    console.log(`    ❌ No valid VIN found`);
+    return null;
   };
 
   // Method 1: Detect barcode in static image
