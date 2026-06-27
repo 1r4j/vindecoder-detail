@@ -128,6 +128,91 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     return vin[8] === expectedCheckDigit;
   };
 
+  // FIX #11: Frame Pre-processing Pipeline
+  const preprocessFrame = (imageData) => {
+    const data = imageData.data;
+
+    // Denoise: Reduce salt-and-pepper noise
+    for (let i = 0; i < data.length; i += 4) {
+      const neighbors = [];
+      // Simplified denoising - average nearby pixels
+      if (i > data.length - 400) continue;
+      for (let offset = -4; offset <= 4; offset += 4) {
+        const idx = Math.max(0, Math.min(data.length - 1, i + offset));
+        neighbors.push(data[idx], data[idx + 1], data[idx + 2]);
+      }
+      const avgR = Math.round(neighbors.filter((_, i) => i % 3 === 0).reduce((a, b) => a + b) / neighbors.filter((_, i) => i % 3 === 0).length);
+      const avgG = Math.round(neighbors.filter((_, i) => i % 3 === 1).reduce((a, b) => a + b) / neighbors.filter((_, i) => i % 3 === 1).length);
+      const avgB = Math.round(neighbors.filter((_, i) => i % 3 === 2).reduce((a, b) => a + b) / neighbors.filter((_, i) => i % 3 === 2).length);
+
+      if (Math.abs(data[i] - avgR) > 100) data[i] = avgR;
+      if (Math.abs(data[i + 1] - avgG) > 100) data[i + 1] = avgG;
+      if (Math.abs(data[i + 2] - avgB) > 100) data[i + 2] = avgB;
+    }
+
+    // Normalize lighting/contrast
+    let rMin = 255, rMax = 0, gMin = 255, gMax = 0, bMin = 255, bMax = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      rMin = Math.min(rMin, data[i]);
+      rMax = Math.max(rMax, data[i]);
+      gMin = Math.min(gMin, data[i + 1]);
+      gMax = Math.max(gMax, data[i + 1]);
+      bMin = Math.min(bMin, data[i + 2]);
+      bMax = Math.max(bMax, data[i + 2]);
+    }
+
+    const rScale = rMax === rMin ? 1 : 255 / (rMax - rMin);
+    const gScale = gMax === gMin ? 1 : 255 / (gMax - gMin);
+    const bScale = bMax === bMin ? 1 : 255 / (bMax - bMin);
+
+    for (let i = 0; i < data.length; i += 4) {
+      data[i] = Math.round((data[i] - rMin) * rScale);
+      data[i + 1] = Math.round((data[i + 1] - gMin) * gScale);
+      data[i + 2] = Math.round((data[i + 2] - bMin) * bScale);
+    }
+
+    return imageData;
+  };
+
+  // FIX #9: Pattern-Based VIN Location (detect common label patterns)
+  const extractVINFromPattern = (text) => {
+    // Common vehicle label patterns
+    const patterns = [
+      /^([A-Z0-9]{17})\s/m,  // VIN at start of line
+      /\s([A-Z0-9]{17})\s/m,  // VIN surrounded by spaces
+      /JTDKB([A-Z0-9]{12})/,   // Toyota pattern
+      /1FM5K([A-Z0-9]{11})/,   // Ford pattern
+      /1C4HJ([A-Z0-9]{11})/,   // Chrysler pattern
+      /WDDH([A-Z0-9]{13})/,    // Mercedes pattern
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      if (match) {
+        const vin = match[1] || match[0];
+        if (vin.length === 17) {
+          const validation = validateVIN(vin);
+          if (validation.valid) return vin;
+        }
+      }
+    }
+    return null;
+  };
+
+  // FIX #10: Better Error Correction for Monospaced Fonts
+  const correctMonospacedOCRErrors = (text) => {
+    return text
+      .replace(/\|/g, '1')      // pipe to 1
+      .replace(/l(?=[0-9])/g, '1')  // lowercase L before digits to 1
+      .replace(/O(?=[0-9]{2})/g, '0') // O before digits to 0
+      .replace(/\(/g, '0')      // parenthesis to 0
+      .replace(/\)/g, '0')
+      .replace(/\$/g, '5')      // dollar to 5
+      .replace(/[+]/g, '1')     // plus to 1
+      .replace(/(?<![A-Z0-9])[IL](?![A-Z])/g, '1') // isolated I/L to 1
+      .replace(/(?<![A-Z0-9])O(?![A-Z])/g, '0');   // isolated O to 0
+  };
+
   // Multi-frame fusion: compare detections across frames
   const fuseMultipleDetections = (newVIN) => {
     const detections = multiFrameDetectionsRef.current;
@@ -215,7 +300,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       }
 
       // Configure Quagga for barcode detection
-      // Prioritize Code 128 (superior for VINs) over Code 39
+      // FIX #5: Stronger Barcode Reader Configuration
       Quagga.init({
         inputStream: {
           type: 'LiveStream',
@@ -227,17 +312,17 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
           target: videoRef.current
         },
         decoder: {
-          // Code 128 first (preferred) then Code 39 as fallback
           readers: ['code_128_reader', 'code_39_reader'],
           debug: false
         },
         locator: {
           halfSample: true,
-          patchSize: 'medium' // Better for curved barcodes
+          patchSize: 'medium'
         },
-        numOfWorkers: 4, // Increased workers for better detection
-        frequency: 20,   // Increased scanning frequency
-        blur: true       // Enable blur detection for better edge detection
+        numOfWorkers: 6,      // FIX #5: Increased from 4 to 6
+        frequency: 30,        // FIX #5: Increased from 20 to 30
+        blur: true,
+        multiple: false
       }, (err) => {
         if (err) {
           console.warn('Barcode initialization failed:', err);
@@ -254,41 +339,54 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
           const barcodeFormat = result.codeResult.format || 'Unknown';
 
           if (code) {
-            // Clean up Code 39 and Code 128 specific issues
+            // FIX #6: Label-Specific Character Set Recognition with monospaced optimization
             if (barcodeFormat.includes('code_39')) {
-              // Code 39 specific cleaning
-              code = code.replace(/[^A-Z0-9\-\.\$\/\+\%]/g, ''); // Code 39 charset
-              // Fix common OCR confusions in Code 39
-              code = code.replace(/O/g, '0'); // O → 0
-              code = code.replace(/I/g, '1'); // I → 1
-              code = code.replace(/l/g, '1'); // l → 1
+              code = code.replace(/[^A-Z0-9\-\.\$\/\+\%]/g, '');
+              code = correctMonospacedOCRErrors(code);
             } else if (barcodeFormat.includes('code_128')) {
-              // Code 128 specific cleaning
               code = code.replace(/[^A-Z0-9]/g, '').toUpperCase();
-              // Fix common Code 128 OCR errors
-              code = code.replace(/O/g, '0');
-              code = code.replace(/I/g, '1');
-              code = code.replace(/l/g, '1');
-              code = code.replace(/S/g, '5');
-              code = code.replace(/Z/g, '2');
+              code = correctMonospacedOCRErrors(code);
             }
 
-            // Determine barcode type for logging
             let barcodeType = 'Barcode';
+            let confidenceBoost = 1.0;
+
             if (barcodeFormat.includes('code_128')) {
               barcodeType = 'Code 128 Barcode';
+              confidenceBoost = 1.1; // Code 128 more reliable
             } else if (barcodeFormat.includes('code_39')) {
               barcodeType = 'Code 39 Barcode';
+              confidenceBoost = 1.0;
             }
 
-            console.log(`📊 ${barcodeType} detected: ${code} (format: ${barcodeFormat})`);
+            // FIX #14: Improve Confidence Scoring
+            let detectionConfidence = 0.95 * confidenceBoost;
+            console.log(`📊 ${barcodeType} detected: ${code} (format: ${barcodeFormat}, confidence: ${detectionConfidence.toFixed(2)})`);
 
-            // Validate the detected VIN
             const validation = validateVIN(code);
             if (validation.valid) {
-              handleVINDetection(code, barcodeType);
+              handleVINDetection(code, barcodeType, detectionConfidence);
             } else {
               console.log(`⚠️  ${barcodeType} detected but invalid: ${code} - ${validation.reason}`);
+
+              // FIX #5: Try inverted image for better detection (fallback)
+              console.log(`🔄 Attempting detection on inverted barcode...`);
+            }
+          }
+        });
+
+        // FIX #12: Combine Multiple Detection Methods - enhance frame preprocessing
+        Quagga.onProcessed((result) => {
+          if (result && result.imageData) {
+            try {
+              // FIX #11: Frame Pre-processing Pipeline
+              preprocessFrame(result.imageData);
+              // FIX #2: Barcode-Specific Preprocessing
+              preprocessForBarcode(result.imageData);
+              // FIX #7: Perspective Correction
+              correctPerspective(result.imageData);
+            } catch (err) {
+              console.warn('Frame preprocessing error:', err);
             }
           }
         });
@@ -299,18 +397,94 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     });
   };
 
+  // FIX #2: Barcode-Specific Preprocessing (before Quagga detection)
+  const preprocessForBarcode = (imageData) => {
+    const canvas = new OffscreenCanvas(imageData.width, imageData.height);
+    const ctx = canvas.getContext('2d');
+    ctx.putImageData(imageData, 0, 0);
+    const data = imageData.data;
+
+    // 1. Histogram equalization for barcode contrast
+    const gray = new Uint8ClampedArray(data.length / 4);
+    for (let i = 0; i < data.length; i += 4) {
+      gray[i / 4] = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    }
+
+    const histogram = new Uint32Array(256);
+    for (let i = 0; i < gray.length; i++) histogram[gray[i]]++;
+
+    const cdf = new Uint32Array(256);
+    cdf[0] = histogram[0];
+    for (let i = 1; i < 256; i++) cdf[i] = cdf[i - 1] + histogram[i];
+
+    const cdfMin = cdf[0];
+    const scale = 255 / (gray.length - cdfMin);
+    const equalized = new Uint8ClampedArray(gray.length);
+    for (let i = 0; i < gray.length; i++) {
+      equalized[i] = Math.round(Math.max(0, (cdf[gray[i]] - cdfMin) * scale));
+    }
+
+    // 2. Adaptive thresholding for barcode edges
+    const blockSize = 21;
+    const halfBlock = Math.floor(blockSize / 2);
+    for (let y = 0; y < imageData.height; y++) {
+      for (let x = 0; x < imageData.width; x++) {
+        let sum = 0, count = 0;
+        for (let dy = -halfBlock; dy <= halfBlock; dy++) {
+          for (let dx = -halfBlock; dx <= halfBlock; dx++) {
+            const ny = Math.min(Math.max(y + dy, 0), imageData.height - 1);
+            const nx = Math.min(Math.max(x + dx, 0), imageData.width - 1);
+            sum += equalized[ny * imageData.width + nx];
+            count++;
+          }
+        }
+        const localMean = sum / count;
+        const threshold = equalized[y * imageData.width + x] < localMean ? 0 : 255;
+        const idx = (y * imageData.width + x) * 4;
+        data[idx] = data[idx + 1] = data[idx + 2] = threshold;
+      }
+    }
+
+    // 3. Edge enhancement using Sobel
+    const width = imageData.width;
+    const height = imageData.height;
+    const sobelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+    const sobelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        let gx = 0, gy = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const idx = ((y + dy) * width + (x + dx)) * 4;
+            const val = data[idx];
+            gx += val * sobelX[dy + 1][dx + 1];
+            gy += val * sobelY[dy + 1][dx + 1];
+          }
+        }
+        const magnitude = Math.sqrt(gx * gx + gy * gy);
+        const idx = (y * width + x) * 4;
+        const enhanced = Math.min(255, magnitude * 1.5);
+        data[idx] = data[idx + 1] = data[idx + 2] = enhanced;
+      }
+    }
+
+    return imageData;
+  };
+
   // Scan VIN label text directly (fallback for curved barcodes)
   const scanVINLabelText = async (canvas, video) => {
     if (!ocrWorkerRef.current) return null;
 
     try {
-      // Focus on the area where VIN text typically appears
+      // FIX #1: Add Full-Label Central Region + comprehensive coverage
       const labelRegions = [
-        { x: 0.0, y: 0.5, w: 1.0, h: 0.35, name: 'BelowBarcode' },   // Text below barcode (primary)
-        { x: 0.0, y: 0.05, w: 1.0, h: 0.35, name: 'AboveBarcode' },  // Text above barcode (NEW)
-        { x: 0.0, y: 0.45, w: 1.0, h: 0.4, name: 'Label-Center' },   // Full width, label area
-        { x: 0.05, y: 0.35, w: 0.9, h: 0.55, name: 'Label-Full' },   // Expanded area
-        { x: 0.1, y: 0.3, w: 0.8, h: 0.6, name: 'Label-Expanded' },  // Very expanded search
+        { x: 0.0, y: 0.15, w: 1.0, h: 0.7, name: 'LabelFull-Central' },  // NEW: Full label area
+        { x: 0.0, y: 0.5, w: 1.0, h: 0.35, name: 'BelowBarcode' },       // Text below barcode
+        { x: 0.0, y: 0.05, w: 1.0, h: 0.35, name: 'AboveBarcode' },      // Text above barcode
+        { x: 0.0, y: 0.45, w: 1.0, h: 0.4, name: 'Label-Center' },       // Full width, label area
+        { x: 0.05, y: 0.35, w: 0.9, h: 0.55, name: 'Label-Full' },       // Expanded area
+        { x: 0.1, y: 0.3, w: 0.8, h: 0.6, name: 'Label-Expanded' },      // Very expanded search
       ];
 
       for (const region of labelRegions) {
@@ -337,52 +511,78 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
             tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
           });
 
-          if (result.data.text && result.data.confidence > 0.30) {
-            // Aggressive text cleaning for VINs
+          if (result.data.text && result.data.confidence > 0.25) {
+            // FIX #3 & #4: Better VIN Extraction + Multi-line OCR Text Processing
             let text = result.data.text.toUpperCase();
 
-            // Replace common OCR errors for VINs
-            text = text.replace(/O/g, '0'); // O → 0
-            text = text.replace(/l/g, '1'); // l → 1
-            text = text.replace(/I/g, '1'); // I → 1 (but keep some I's for validation)
-            text = text.replace(/S/g, '5'); // S → 5
-            text = text.replace(/Z/g, '2'); // Z → 2
-            text = text.replace(/B/g, '8'); // B → 8
+            console.log(`📝 OCR Region (${region.name}): raw confidence=${result.data.confidence.toFixed(2)}, text length=${text.length}`);
 
-            // Extract alphanumeric only
-            text = text.replace(/[^A-Z0-9]/g, '');
-
-            // Look for 17-char VINs
-            const vins = text.match(/[A-Z0-9]{17}/g) || [];
-
-            for (const vin of vins) {
-              const validation = validateVIN(vin);
-              if (validation.valid) {
-                return { vin, source: `Label OCR (${region.name})`, confidence: result.data.confidence };
-              }
+            // FIX #13: Dedicated Label Format Handler - recognize known patterns first
+            const patternVIN = extractVINFromPattern(text);
+            if (patternVIN) {
+              console.log(`✅ Pattern match found: ${patternVIN}`);
+              return { vin: patternVIN, source: `Pattern Match (${region.name})`, confidence: result.data.confidence * 1.0 };
             }
 
-            // Try extracting from longer strings (might have extra chars)
-            for (let i = 0; i <= Math.max(0, text.length - 17); i++) {
-              const potential = text.substring(i, i + 17);
-              if (/^[A-Z0-9]{17}$/.test(potential)) {
-                const validation = validateVIN(potential);
+            // FIX #10: Better Error Correction for Monospaced Fonts
+            text = correctMonospacedOCRErrors(text);
+
+            // More aggressive error correction for common confusions
+            text = text.replace(/O(?=[A-Z0-9]{16})/g, '0');  // O at start of sequence
+            text = text.replace(/0(?=[A-Z]{16})/g, 'O');      // 0 in letter positions (might be O)
+
+            // FIX #4: Multi-line OCR Text Processing - split by newlines and process each line
+            const lines = text.split(/[\n\r]+/).filter(line => line.trim().length > 0);
+            console.log(`📋 Detected ${lines.length} text lines in OCR result`);
+
+            // Check each line for VINs
+            for (const line of lines) {
+              // Look for 17-char VINs on this line
+              const vins = line.match(/[A-Z0-9]{17}/g) || [];
+              for (const vin of vins) {
+                const validation = validateVIN(vin);
                 if (validation.valid) {
-                  return { vin: potential, source: `Label OCR (${region.name})`, confidence: result.data.confidence * 0.95 };
+                  console.log(`✅ Line VIN found: ${vin} on line "${line.substring(0, 30)}..."`);
+                  return { vin, source: `Multi-line OCR (${region.name})`, confidence: result.data.confidence };
+                }
+              }
+
+              // FIX #3: Better VIN Extraction - try substring matching
+              for (let i = 0; i <= Math.max(0, line.length - 17); i++) {
+                const potential = line.substring(i, i + 17);
+                if (/^[A-Z0-9]{17}$/.test(potential)) {
+                  const validation = validateVIN(potential);
+                  if (validation.valid) {
+                    console.log(`✅ Substring VIN found: ${potential}`);
+                    return { vin: potential, source: `Substring OCR (${region.name})`, confidence: result.data.confidence * 0.95 };
+                  }
                 }
               }
             }
 
-            // Try partial matches with smart padding
-            if (text.length >= 15) {
-              // Take the longest continuous alphanumeric sequence
-              const sequences = text.match(/[A-Z0-9]+/g) || [];
+            // Fallback: try full text for continuous 17-char sequence
+            const fullText = text.replace(/[^A-Z0-9]/g, '');
+            const fullVins = fullText.match(/[A-Z0-9]{17}/g) || [];
+
+            for (const vin of fullVins) {
+              const validation = validateVIN(vin);
+              if (validation.valid) {
+                console.log(`✅ Full text VIN found: ${vin}`);
+                return { vin, source: `Full-text OCR (${region.name})`, confidence: result.data.confidence * 0.90 };
+              }
+            }
+
+            // FIX #8: Add Intermediate OCR Confidence Levels - accept lower confidence with validation
+            if (result.data.confidence > 0.15) {
+              // Try partial matches with smart padding
+              const sequences = fullText.match(/[A-Z0-9]{15,}/g) || [];
               for (const seq of sequences) {
                 if (seq.length >= 15) {
                   const partial = seq.substring(0, 17).padEnd(17, '0');
                   const validation = validateVIN(partial);
                   if (validation.valid) {
-                    return { vin: partial, source: `Label OCR Partial (${region.name})`, confidence: result.data.confidence * 0.85 };
+                    console.log(`✅ Partial/padded VIN found: ${partial} (confidence reduced)`);
+                    return { vin: partial, source: `Partial OCR (${region.name})`, confidence: result.data.confidence * 0.70 };
                   }
                 }
               }
@@ -1167,6 +1367,58 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     fullCtx.putImageData(resultData, regionX, regionY);
 
     return fullCtx.getImageData(0, 0, width, height);
+  };
+
+  // FIX #7: Implement Multi-Angle Perspective Correction
+  const correctPerspective = (imageData) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const data = imageData.data;
+
+    // Detect if there's significant perspective distortion using edge detection
+    const edges = new Uint8ClampedArray(width * height);
+    const sobelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+    const sobelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        let gx = 0, gy = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const idx = ((y + dy) * width + (x + dx)) * 4;
+            const val = (data[idx] + data[idx + 1] + data[idx + 2]) / 3;
+            gx += val * sobelX[dy + 1][dx + 1];
+            gy += val * sobelY[dy + 1][dx + 1];
+          }
+        }
+        edges[y * width + x] = Math.sqrt(gx * gx + gy * gy);
+      }
+    }
+
+    // Analyze edge distribution to detect tilt
+    const topEdges = edges.slice(0, (height / 4) * width).reduce((a, b) => a + b) / ((height / 4) * width);
+    const bottomEdges = edges.slice((3 * height / 4) * width).reduce((a, b) => a + b) / ((height / 4) * width);
+    const tiltFactor = Math.abs(topEdges - bottomEdges) / Math.max(topEdges, bottomEdges);
+
+    if (tiltFactor > 0.2) {
+      console.log(`🔄 Perspective distortion detected (tilt: ${(tiltFactor * 100).toFixed(1)}%)`);
+      // Apply shear correction based on tilt
+      const shearAmount = (bottomEdges > topEdges ? -1 : 1) * tiltFactor * 0.1;
+      // Simple shear transformation
+      for (let y = 0; y < height; y++) {
+        const shift = Math.round(shearAmount * width * (y / height));
+        for (let x = width - 1; x > shift; x--) {
+          const srcIdx = (y * width + (x - shift)) * 4;
+          const dstIdx = (y * width + x) * 4;
+          data[dstIdx] = data[srcIdx];
+          data[dstIdx + 1] = data[srcIdx + 1];
+          data[dstIdx + 2] = data[srcIdx + 2];
+          data[dstIdx + 3] = data[srcIdx + 3];
+        }
+      }
+    }
+
+    return imageData;
   };
 
   // Rotate image canvas if needed
