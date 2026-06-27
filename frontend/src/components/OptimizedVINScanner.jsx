@@ -9,6 +9,9 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const [status, setStatus] = useState('Tap to request camera access');
   const [cameraReady, setCameraReady] = useState(false);
   const [confidence, setConfidence] = useState(0);
+  const [capturedImageData, setCapturedImageData] = useState(null);
+  const [processingCapture, setProcessingCapture] = useState(false);
+  const [captureResult, setCaptureResult] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -73,6 +76,236 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       }
     };
   }, []);
+
+  // Capture current frame for static image processing
+  const captureFrame = async () => {
+    if (!videoRef.current || !canvasRef.current) return;
+
+    try {
+      setStatus('📸 Capturing image...');
+      const canvas = canvasRef.current;
+      const video = videoRef.current;
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      setCapturedImageData(imageData);
+
+      setStatus('🔍 Processing captured image...');
+      setProcessingCapture(true);
+
+      // Process the captured image with all VIN detection methods
+      const result = await processStaticImage(imageData);
+
+      if (result) {
+        setCaptureResult(result);
+        setDetectedVIN(result.vin);
+        setConfidence(result.confidence);
+        setStatus(`✅ VIN Detected: ${result.vin}`);
+      } else {
+        setStatus('❌ No VIN detected in image. Try adjusting angle and lighting.');
+        setCaptureResult(null);
+      }
+
+      setProcessingCapture(false);
+    } catch (err) {
+      console.error('Capture error:', err);
+      setStatus('❌ Error capturing image');
+      setProcessingCapture(false);
+    }
+  };
+
+  // Process a static captured image with all detection methods
+  const processStaticImage = async (imageData) => {
+    console.log('🔄 Processing static captured image...');
+
+    try {
+      // Method 1: Try barcode detection on preprocessed image
+      console.log('📊 Method 1: Barcode detection...');
+      const barcodeResult = await detectBarcodeInStatic(imageData);
+      if (barcodeResult) {
+        console.log(`✅ Barcode found: ${barcodeResult.vin} (${barcodeResult.source})`);
+        return barcodeResult;
+      }
+
+      // Method 2: Try pattern-based detection
+      console.log('🔍 Method 2: Pattern-based detection...');
+      const patternResult = await detectPatternInStatic(imageData);
+      if (patternResult) {
+        console.log(`✅ Pattern found: ${patternResult.vin} (${patternResult.source})`);
+        return patternResult;
+      }
+
+      // Method 3: Try OCR text extraction
+      console.log('📝 Method 3: OCR text extraction...');
+      const ocrResult = await detectOCRInStatic(imageData);
+      if (ocrResult) {
+        console.log(`✅ OCR found: ${ocrResult.vin} (${ocrResult.source})`);
+        return ocrResult;
+      }
+
+      console.log('❌ No VIN detection methods succeeded');
+      return null;
+    } catch (err) {
+      console.error('Static image processing error:', err);
+      return null;
+    }
+  };
+
+  // Method 1: Detect barcode in static image
+  const detectBarcodeInStatic = async (imageData) => {
+    return new Promise((resolve) => {
+      // Create a temporary canvas for barcode detection
+      const canvas = new OffscreenCanvas(imageData.width, imageData.height);
+      const ctx = canvas.getContext('2d');
+      ctx.putImageData(imageData, 0, 0);
+
+      // Preprocess for barcode
+      const processedData = ctx.getImageData(0, 0, imageData.width, imageData.height);
+      preprocessFrame(processedData);
+      preprocessForBarcode(processedData);
+      correctPerspective(processedData);
+
+      ctx.putImageData(processedData, 0, 0);
+
+      // Try to detect barcode using Quagga
+      Quagga.decodeSingle({
+        src: canvas,
+        numOfWorkers: 4,
+        inputStream: {
+          type: 'ImageData',
+          data: processedData
+        },
+        decoder: {
+          readers: ['code_128_reader', 'code_39_reader']
+        }
+      }, (result) => {
+        if (result && result.codeResult) {
+          let code = result.codeResult.code?.trim();
+          if (code) {
+            code = correctMonospacedOCRErrors(code);
+            const validation = validateVIN(code);
+            if (validation.valid) {
+              resolve({
+                vin: code,
+                confidence: 0.90,
+                source: `Static Barcode (${result.codeResult.format})`
+              });
+              return;
+            }
+          }
+        }
+        resolve(null);
+      });
+
+      // Timeout after 3 seconds
+      setTimeout(() => resolve(null), 3000);
+    });
+  };
+
+  // Method 2: Pattern-based detection in static image
+  const detectPatternInStatic = async (imageData) => {
+    try {
+      // Run OCR on full image to get text
+      if (!ocrWorkerRef.current) return null;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      const ctx = canvas.getContext('2d');
+      ctx.putImageData(imageData, 0, 0);
+
+      const result = await ocrWorkerRef.current.recognize(canvas, 'eng', {
+        tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT,
+        tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+      });
+
+      if (result.data.text) {
+        const text = result.data.text.toUpperCase();
+        const patternVIN = extractVINFromPattern(text);
+        if (patternVIN) {
+          return {
+            vin: patternVIN,
+            confidence: 0.85,
+            source: 'Static Pattern Detection'
+          };
+        }
+      }
+      return null;
+    } catch (err) {
+      console.error('Pattern detection error:', err);
+      return null;
+    }
+  };
+
+  // Method 3: OCR text extraction in static image
+  const detectOCRInStatic = async (imageData) => {
+    try {
+      if (!ocrWorkerRef.current) return null;
+
+      const canvas = document.createElement('canvas');
+      canvas.width = imageData.width;
+      canvas.height = imageData.height;
+      const ctx = canvas.getContext('2d');
+      ctx.putImageData(imageData, 0, 0);
+
+      // Try multiple OCR configurations
+      const configs = [
+        { tessedit_pageseg_mode: Tesseract.PSM.SPARSE_TEXT },
+        { tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK },
+        { tessedit_pageseg_mode: Tesseract.PSM.AUTO }
+      ];
+
+      for (const config of configs) {
+        const result = await ocrWorkerRef.current.recognize(canvas, 'eng', config);
+
+        if (result.data.text && result.data.confidence > 0.20) {
+          let text = result.data.text.toUpperCase();
+          text = correctMonospacedOCRErrors(text);
+
+          // Look for VINs
+          const lines = text.split(/[\n\r]+/);
+          for (const line of lines) {
+            const vins = line.match(/[A-Z0-9]{17}/g) || [];
+            for (const vin of vins) {
+              const validation = validateVIN(vin);
+              if (validation.valid) {
+                return {
+                  vin,
+                  confidence: Math.max(0.70, result.data.confidence * 0.8),
+                  source: 'Static OCR Text Detection'
+                };
+              }
+            }
+          }
+
+          // Try substring extraction
+          const fullText = text.replace(/[^A-Z0-9]/g, '');
+          for (let i = 0; i <= Math.max(0, fullText.length - 17); i++) {
+            const potential = fullText.substring(i, i + 17);
+            if (/^[A-Z0-9]{17}$/.test(potential)) {
+              const validation = validateVIN(potential);
+              if (validation.valid) {
+                return {
+                  vin: potential,
+                  confidence: 0.65,
+                  source: 'Static OCR Substring Detection'
+                };
+              }
+            }
+          }
+        }
+      }
+
+      return null;
+    } catch (err) {
+      console.error('OCR detection error:', err);
+      return null;
+    }
+  };
 
   const validateVIN = (vin, minConfidence = 0.75) => {
     if (!vin || typeof vin !== 'string') return { valid: false, reason: 'Invalid input' };
@@ -1880,10 +2113,60 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               transition: 'all 0.3s ease-in-out'
             }} />
 
-            {/* Instruction Text */}
+            {/* Capture Button and Instructions */}
             <div style={{
               position: 'absolute',
-              bottom: orientation === 'landscape' ? '20px' : '16px',
+              bottom: orientation === 'landscape' ? '60px' : '80px',
+              left: '50%',
+              transform: 'translateX(-50%)',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '16px',
+              zIndex: 2
+            }}>
+              {/* Capture Button */}
+              <button
+                onClick={captureFrame}
+                disabled={processingCapture}
+                style={{
+                  width: orientation === 'landscape' ? '60px' : '70px',
+                  height: orientation === 'landscape' ? '60px' : '70px',
+                  borderRadius: '50%',
+                  backgroundColor: '#4F46E5',
+                  border: '3px solid white',
+                  color: 'white',
+                  fontSize: orientation === 'landscape' ? '28px' : '32px',
+                  cursor: processingCapture ? 'not-allowed' : 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  opacity: processingCapture ? 0.6 : 1,
+                  transition: 'all 0.2s ease',
+                  boxShadow: '0 4px 15px rgba(0, 0, 0, 0.3)',
+                  fontWeight: '600'
+                }}
+              >
+                {processingCapture ? '⏳' : '📷'}
+              </button>
+
+              {/* Instruction Text */}
+              <div style={{
+                color: '#fff',
+                fontSize: orientation === 'landscape' ? '12px' : '11px',
+                fontWeight: '500',
+                textAlign: 'center',
+                opacity: 0.9,
+                padding: '0 16px'
+              }}>
+                {processingCapture ? 'Processing...' : 'Tap to capture\nif live scanning\nfails'}
+              </div>
+            </div>
+
+            {/* Static Instruction Text */}
+            <div style={{
+              position: 'absolute',
+              bottom: orientation === 'landscape' ? '12px' : '16px',
               left: '50%',
               transform: 'translateX(-50%)',
               color: '#fff',
@@ -1899,6 +2182,91 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
           </>
         )}
       </div>
+
+      {/* Capture Result Modal */}
+      {captureResult && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)', zIndex: 10001, display: 'flex', alignItems: 'flex-end' }}>
+          <div style={{ width: '100%', backgroundColor: 'white', borderRadius: '16px 16px 0 0', padding: '32px 24px 24px', textAlign: 'center', animation: 'slideUp 0.3s ease-out' }}>
+            {captureResult.vin ? (
+              <>
+                <p style={{ fontSize: '14px', color: '#64748B', margin: '0 0 12px 0', fontWeight: '500' }}>✅ VIN Detected from Image</p>
+                <h2 style={{ fontSize: '24px', fontWeight: '700', color: '#1E293B', margin: '0 0 8px 0', letterSpacing: '1px', fontFamily: 'monospace' }}>{captureResult.vin}</h2>
+                <p style={{ fontSize: '12px', color: '#94A3B8', margin: '0 0 24px 0' }}>
+                  {captureResult.source} • {(captureResult.confidence * 100).toFixed(0)}% confidence
+                </p>
+
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => {
+                      setCaptureResult(null);
+                      setCapturedImageData(null);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '12px 24px',
+                      backgroundColor: 'white',
+                      color: '#1E293B',
+                      border: '2px solid #CBD5E1',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Retry
+                  </button>
+                  <button
+                    onClick={() => {
+                      handleVINDetection(captureResult.vin, captureResult.source);
+                      setCaptureResult(null);
+                      setCapturedImageData(null);
+                    }}
+                    style={{
+                      flex: 1,
+                      padding: '12px 24px',
+                      background: 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
+                      color: 'white',
+                      border: 'none',
+                      borderRadius: '8px',
+                      fontSize: '16px',
+                      fontWeight: '600',
+                      cursor: 'pointer'
+                    }}
+                  >
+                    Use This VIN
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <p style={{ fontSize: '14px', color: '#EF4444', margin: '0 0 12px 0', fontWeight: '500' }}>❌ No VIN Detected</p>
+                <p style={{ fontSize: '13px', color: '#64748B', margin: '0 0 24px 0' }}>
+                  Try adjusting the lighting, angle, or focus. Make sure the VIN label is clearly visible.
+                </p>
+                <button
+                  onClick={() => {
+                    setCaptureResult(null);
+                    setCapturedImageData(null);
+                  }}
+                  style={{
+                    width: '100%',
+                    padding: '12px 24px',
+                    backgroundColor: '#4F46E5',
+                    color: 'white',
+                    border: 'none',
+                    borderRadius: '8px',
+                    fontSize: '16px',
+                    fontWeight: '600',
+                    cursor: 'pointer'
+                  }}
+                >
+                  Try Again
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* VIN Confirmation Modal */}
       {showConfirmation && (
