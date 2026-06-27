@@ -25,7 +25,12 @@ export default function BusinessSettings() {
 
   // Reset all state when user changes
   useEffect(() => {
-    // Clear state immediately
+    console.log('[BusinessSettings] User changed, resetting all settings. New user ID:', user?.id);
+
+    // Set loading immediately to prevent showing stale data
+    setLoading(true);
+
+    // Clear all state immediately
     setSettings(null);
     setBusinessName('');
     setAddress('');
@@ -45,17 +50,29 @@ export default function BusinessSettings() {
 
     // Then load new settings for the user
     if (user?.id) {
+      console.log('[BusinessSettings] Loading settings for user:', user.id);
       loadSettings();
+    } else {
+      console.log('[BusinessSettings] No user ID, settings cleared');
+      setLoading(false);
     }
   }, [user?.id]);
 
   const loadSettings = async () => {
     setLoading(true);
     try {
+      console.log('[BusinessSettings] Fetching settings from backend...');
       const response = await settingsService.get();
       const data = response.data.data;
-      setSettings(data);
 
+      console.log('[BusinessSettings] Settings loaded:', {
+        businessName: data?.businessName,
+        address: data?.address,
+        taxRates: data?.taxRates,
+        userId: user?.id
+      });
+
+      setSettings(data);
       setBusinessName(data?.businessName || '');
       setAddress(data?.address || '');
       setCity(data?.city || '');
@@ -77,9 +94,10 @@ export default function BusinessSettings() {
       setPaymentTerms(String(data?.paymentTerms || 14));
       setCurrency(data?.currency || '$');
       setError('');
+      console.log('[BusinessSettings] Settings update complete');
     } catch (err) {
+      console.error('[BusinessSettings] Error loading settings:', err);
       setError('Failed to load settings');
-      console.error(err);
     } finally {
       setLoading(false);
     }
