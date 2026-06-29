@@ -315,8 +315,8 @@ export const applyFontSpecificCorrections = (text, manufacturer) => {
     corrected = corrected.replace(/FN/g, 'FM');
     corrected = corrected.replace(/FH/g, 'FM');
   } else if (manufacturer === 'Chevrolet') {
-    // Chevy uses "GKK" pattern
-    corrected = corrected.replace(/GK(/g, 'GKK');
+    // Chevy uses "GKK" pattern - ensure double K
+    corrected = corrected.replace(/GK(?!K)/g, 'GKK');
   } else if (manufacturer === 'Chrysler') {
     // Chrysler uses "C4H" pattern
     corrected = corrected.replace(/CAH/g, 'C4H');
