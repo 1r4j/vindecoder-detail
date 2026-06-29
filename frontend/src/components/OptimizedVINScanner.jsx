@@ -817,10 +817,53 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   // Decode VIN make (first 3 characters - WMI)
   const decodeVINMake = (wmi) => {
     const makeMap = {
-      'WDB': 'Mercedes-Benz', 'WBA': 'BMW', 'WAU': 'Audi', 'WP0': 'Porsche', '3VW': 'Volkswagen',
-      'JTD': 'Toyota', 'JN1': 'Nissan', 'JHM': 'Honda', 'JM1': 'Mazda', 'JF1': 'Subaru',
-      'MME': 'Mitsubishi', 'ZC3': 'Suzuki', '1FM': 'Ford', '1GK': 'Chevrolet', '1C4': 'Chrysler',
-      '5YJ': 'Tesla', 'YV1': 'Volvo', 'ZAR': 'Fiat', 'TMAT': 'Tata', 'MAT': 'Mahindra'
+      // German Manufacturers (W prefix)
+      'WDB': 'Mercedes-Benz',
+      'WDD': 'Mercedes-Benz',  // Additional Mercedes variant
+      'WBA': 'BMW',
+      'WBS': 'BMW',             // BMW variant
+      'WAU': 'Audi',
+      'WVW': 'Volkswagen',       // VW variant
+      '3VW': 'Volkswagen',
+      'WP0': 'Porsche',
+      'W0L': 'Opel',             // Opel/Vauxhall
+      'WXX': 'Opel',             // Opel variant
+
+      // Japanese Manufacturers (J prefix)
+      'JTD': 'Toyota',
+      'JT2': 'Toyota',            // Toyota variant
+      'JTH': 'Toyota',            // Toyota variant
+      'JN1': 'Nissan',
+      'JHM': 'Honda',
+      'JH2': 'Honda',             // Honda variant
+      'JM1': 'Mazda',
+      'JF1': 'Subaru',
+      'JF2': 'Subaru',            // Subaru variant
+      'MME': 'Mitsubishi',
+      'MM3': 'Mitsubishi',        // Mitsubishi variant
+      'ZC3': 'Suzuki',
+      'ZC1': 'Suzuki',            // Suzuki variant
+
+      // American Manufacturers
+      '1FM': 'Ford',
+      '1FA': 'Ford',              // Ford variant
+      '1GK': 'Chevrolet',
+      '1G1': 'Chevrolet',         // Chevy variant
+      '1GC': 'Chevrolet',         // Chevy variant
+      '1C4': 'Chrysler',
+      '1C3': 'Chrysler',          // Chrysler variant
+      '5YJ': 'Tesla',
+      '5YM': 'Tesla',             // Tesla variant
+
+      // European Manufacturers
+      'YV1': 'Volvo',
+      'YV2': 'Volvo',             // Volvo variant
+      'ZAR': 'Fiat',
+      'ZFF': 'Ferrari',
+
+      // Other
+      'TMAT': 'Tata',
+      'MAT': 'Mahindra'
     };
 
     for (const [key, value] of Object.entries(makeMap)) {
@@ -831,13 +874,70 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
   // Decode VIN model (positions 4-9, varies by manufacturer)
   const decodeVINModel = (code, make) => {
-    // This is simplified - real VIN decoding requires manufacturer-specific tables
-    // For now, return the code itself as placeholder
+    // Manufacturer-specific model codes (positions 4-9)
     const modelMap = {
-      'Toyota': { 'KB20': 'Corolla', 'BR20': 'RAV4', 'AR10': 'Camry' },
-      'Honda': { 'HM10': 'Civic', 'CR10': 'CR-V', 'AN10': 'Accord' },
-      'Ford': { 'M5K8': 'Mustang', 'F15D': 'F-150', 'FF3Z': 'Edge' },
-      'Chevrolet': { 'KKP': 'Equinox', 'KGJ': 'Silverado', 'KGD': 'Impala' }
+      // German Manufacturers
+      'Mercedes-Benz': {
+        'ZF4K': 'C-Class', 'ZF5K': 'E-Class', 'ZF7K': 'S-Class',
+        'ZFA': 'A-Class', 'ZFG': 'G-Class', 'ZFR': 'R-Class',
+        'C292': 'GLE', 'C167': 'GLA', 'Z223': 'C-Class'
+      },
+      'BMW': {
+        'BA11': '3-Series', 'BA12': '5-Series', 'BA13': '7-Series',
+        'BA14': 'X-Series', 'BA21': 'Z-Series', 'BA41': 'M-Series'
+      },
+      'Audi': {
+        'AU11': 'A3', 'AU21': 'A4', 'AU31': 'A6', 'AU41': 'A8',
+        'AU51': 'Q5', 'AU61': 'Q7', 'AU71': 'Q8'
+      },
+      'Volkswagen': {
+        'VW11': 'Golf', 'VW21': 'Passat', 'VW31': 'Jetta',
+        'VW41': 'Tiguan', 'VW51': 'Touareg', 'VW61': 'Beetle'
+      },
+      'Porsche': {
+        'P911': '911', 'P924': 'Cayenne', 'P944': 'Panamera',
+        'P918': 'Boxster', 'P919': 'Cayman'
+      },
+      'Opel': {
+        'OP11': 'Corsa', 'OP21': 'Astra', 'OP31': 'Vectra',
+        'OP41': 'Insignia', 'OP51': 'Grandland'
+      },
+
+      // Japanese Manufacturers
+      'Toyota': {
+        'KB20': 'Corolla', 'BR20': 'RAV4', 'AR10': 'Camry',
+        'GZ11': 'Prius', 'UZ11': 'Land Cruiser', 'RN21': 'Highlander'
+      },
+      'Honda': {
+        'HM10': 'Civic', 'CR10': 'CR-V', 'AN10': 'Accord',
+        'YH21': 'Odyssey', 'AH31': 'Ridgeline', 'CE11': 'Fit'
+      },
+      'Nissan': {
+        'N111': 'Altima', 'N112': 'Maxima', 'N121': 'Sentra',
+        'N131': 'Rogue', 'N141': 'Pathfinder', 'N151': 'Murano'
+      },
+      'Mazda': {
+        'BJ11': 'CX-5', 'BJ21': 'CX-9', 'BJ31': '3',
+        'BJ41': '6', 'BJ51': 'CX-3', 'BJ61': 'MX-5'
+      },
+      'Subaru': {
+        'JF11': 'Impreza', 'JF21': 'Legacy', 'JF31': 'Outback',
+        'JF41': 'Crosstrek', 'JF51': 'Forester', 'JF61': 'WRX'
+      },
+
+      // American Manufacturers
+      'Ford': {
+        'M5K8': 'Mustang', 'F15D': 'F-150', 'FF3Z': 'Edge',
+        'K7B': 'Fusion', 'P7B': 'Escape', 'B4B': 'Explorer'
+      },
+      'Chevrolet': {
+        'KKP': 'Equinox', 'KGJ': 'Silverado', 'KGD': 'Impala',
+        'KL1': 'Cruze', 'KL9': 'Trax', 'KL8': 'Trax'
+      },
+      'Chrysler': {
+        'C4HJ': '200', 'C4HX': '300', 'C4GJ': 'Pacifica',
+        'C4UP': 'Journey', 'C4PH': 'Town Country'
+      }
     };
 
     if (modelMap[make]) {

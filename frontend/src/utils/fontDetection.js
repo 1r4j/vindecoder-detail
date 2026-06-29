@@ -8,41 +8,54 @@
 
 // Manufacturer font database
 export const MANUFACTURER_FONTS = {
-  // German manufacturers
-  'Mercedes': {
+  // German manufacturers (W prefix codes)
+  'Mercedes-Benz': {
     fonts: ['OCR-A', 'Courier New'],
     characteristics: { monospaced: true, contrast: 'high', country: 'DE' },
     commonConfusions: { '0': 'O', '1': 'I', '5': 'S', 'B': '8' },
     errorCorrection: { 'O': '0', 'I': '1', 'l': '1', 'S': '5', 'Z': '2', 'B': '8' },
-    vinPattern: /^WD[A-Z0-9]{14}$/
+    vinPattern: /^WD[DB][A-Z0-9]{14}$/,
+    wmiCodes: ['WDB', 'WDD']
   },
   'BMW': {
     fonts: ['Helvetica', 'OCR-B'],
     characteristics: { monospaced: false, contrast: 'high', country: 'DE' },
     commonConfusions: { '0': 'O', '1': 'I', 'L': '1' },
     errorCorrection: { 'O': '0', 'I': '1', 'l': '1' },
-    vinPattern: /^WB[A-Z0-9]{14}$/
+    vinPattern: /^WBS?[A-Z0-9]{14}$/,
+    wmiCodes: ['WBA', 'WBS']
   },
   'Audi': {
     fonts: ['Courier New', 'OCR-A'],
     characteristics: { monospaced: true, contrast: 'high', country: 'DE' },
     commonConfusions: { '0': 'O', '5': 'S', 'E': 'F' },
     errorCorrection: { 'O': '0', 'I': '1', 'l': '1', 'S': '5' },
-    vinPattern: /^WAU[A-Z0-9]{14}$/
+    vinPattern: /^WAU[A-Z0-9]{14}$/,
+    wmiCodes: ['WAU']
   },
   'Porsche': {
     fonts: ['Courier', 'Consolas'],
     characteristics: { monospaced: true, contrast: 'very_high', country: 'DE', stamped: true },
     commonConfusions: { '0': 'O', 'I': '1', 'l': '1' },
     errorCorrection: { 'O': '0', 'I': '1', 'l': '1' },
-    vinPattern: /^WP0[A-Z0-9]{14}$/
+    vinPattern: /^WP0[A-Z0-9]{14}$/,
+    wmiCodes: ['WP0']
   },
   'Volkswagen': {
     fonts: ['Courier New', 'Courier'],
     characteristics: { monospaced: true, contrast: 'high', country: 'DE' },
     commonConfusions: { '0': 'O', 'D': 'O', 'P': 'R' },
     errorCorrection: { 'O': '0', 'I': '1', 'l': '1' },
-    vinPattern: /^3VW[A-Z0-9]{14}$/
+    vinPattern: /^(3VW|WVW)[A-Z0-9]{14}$/,
+    wmiCodes: ['3VW', 'WVW']
+  },
+  'Opel': {
+    fonts: ['Courier New', 'Courier'],
+    characteristics: { monospaced: true, contrast: 'high', country: 'DE' },
+    commonConfusions: { '0': 'O', 'I': '1', 'l': '1' },
+    errorCorrection: { 'O': '0', 'I': '1', 'l': '1' },
+    vinPattern: /^W0L[A-Z0-9]{14}$/,
+    wmiCodes: ['W0L']
   },
 
   // Japanese manufacturers
