@@ -13,6 +13,8 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const [capturedImageData, setCapturedImageData] = useState(null);
   const [processingCapture, setProcessingCapture] = useState(false);
   const [captureResult, setCaptureResult] = useState(null);
+  const [showCaptureVINButton, setShowCaptureVINButton] = useState(false);
+  const [vinDecodeResult, setVinDecodeResult] = useState(null);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -769,6 +771,103 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
   };
 
+  // Decode VIN and fetch vehicle information
+  const decodeVINAndGetInfo = async (vin) => {
+    try {
+      setVinDecodeResult(null);
+
+      // VIN structure decoding
+      const year = decodeVINYear(vin[9]);
+      const make = decodeVINMake(vin.substring(0, 3));
+      const model = decodeVINModel(vin.substring(3, 9), make);
+      const bodyType = decodeVINBodyType(vin[7]);
+      const engine = decodeVINEngine(vin[8]);
+
+      const vehicleInfo = {
+        vin: vin,
+        year: year,
+        make: make,
+        model: model,
+        bodyType: bodyType,
+        engine: engine,
+        serialNumber: vin.substring(11, 17),
+        checkDigit: vin[8]
+      };
+
+      setVinDecodeResult(vehicleInfo);
+      console.log('✅ Vehicle Info Decoded:', vehicleInfo);
+
+      return vehicleInfo;
+    } catch (err) {
+      console.error('VIN decode error:', err);
+      return null;
+    }
+  };
+
+  // Decode VIN year (10th character)
+  const decodeVINYear = (char) => {
+    const yearMap = {
+      'A': 2010, 'B': 2011, 'C': 2012, 'D': 2013, 'E': 2014, 'F': 2015, 'G': 2016,
+      'H': 2017, 'J': 2018, 'K': 2019, 'L': 2020, 'M': 2021, 'N': 2022, 'P': 2023,
+      'R': 2024, 'S': 2025, 'T': 2026, 'V': 2027, 'W': 2028, 'X': 2029, 'Y': 2030
+    };
+    return yearMap[char] || 'Unknown Year';
+  };
+
+  // Decode VIN make (first 3 characters - WMI)
+  const decodeVINMake = (wmi) => {
+    const makeMap = {
+      'WDB': 'Mercedes-Benz', 'WBA': 'BMW', 'WAU': 'Audi', 'WP0': 'Porsche', '3VW': 'Volkswagen',
+      'JTD': 'Toyota', 'JN1': 'Nissan', 'JHM': 'Honda', 'JM1': 'Mazda', 'JF1': 'Subaru',
+      'MME': 'Mitsubishi', 'ZC3': 'Suzuki', '1FM': 'Ford', '1GK': 'Chevrolet', '1C4': 'Chrysler',
+      '5YJ': 'Tesla', 'YV1': 'Volvo', 'ZAR': 'Fiat', 'TMAT': 'Tata', 'MAT': 'Mahindra'
+    };
+
+    for (const [key, value] of Object.entries(makeMap)) {
+      if (wmi.startsWith(key)) return value;
+    }
+    return 'Unknown Make';
+  };
+
+  // Decode VIN model (positions 4-9, varies by manufacturer)
+  const decodeVINModel = (code, make) => {
+    // This is simplified - real VIN decoding requires manufacturer-specific tables
+    // For now, return the code itself as placeholder
+    const modelMap = {
+      'Toyota': { 'KB20': 'Corolla', 'BR20': 'RAV4', 'AR10': 'Camry' },
+      'Honda': { 'HM10': 'Civic', 'CR10': 'CR-V', 'AN10': 'Accord' },
+      'Ford': { 'M5K8': 'Mustang', 'F15D': 'F-150', 'FF3Z': 'Edge' },
+      'Chevrolet': { 'KKP': 'Equinox', 'KGJ': 'Silverado', 'KGD': 'Impala' }
+    };
+
+    if (modelMap[make]) {
+      for (const [key, value] of Object.entries(modelMap[make])) {
+        if (code.includes(key)) return value;
+      }
+    }
+
+    return 'Unknown Model';
+  };
+
+  // Decode VIN body type (8th character)
+  const decodeVINBodyType = (char) => {
+    const bodyMap = {
+      '1': 'Sedan', '2': 'Coupe', '3': 'Hatchback', '4': 'Wagon', '5': 'SUV',
+      '6': 'Convertible', '7': 'Pickup', '8': 'Van', '9': 'Other'
+    };
+    return bodyMap[char] || 'Unknown';
+  };
+
+  // Decode VIN engine (9th character)
+  const decodeVINEngine = (char) => {
+    const engineMap = {
+      '1': '2.0L 4-Cyl', '2': '2.4L 4-Cyl', '3': '2.8L 6-Cyl', '4': '3.0L 6-Cyl',
+      '5': '3.5L 6-Cyl', '6': '4.0L 8-Cyl', '7': '5.0L 8-Cyl', '8': 'Hybrid',
+      '9': 'Electric', 'E': 'EcoBoost', 'T': 'Turbo', 'D': 'Diesel'
+    };
+    return engineMap[char] || 'Unknown Engine';
+  };
+
   const validateVIN = (vin, minConfidence = 0.75) => {
     if (!vin || typeof vin !== 'string') return { valid: false, reason: 'Invalid input' };
 
@@ -1395,6 +1494,68 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         setTimeout(scanVINWithOCR, 300);
       }
     }
+  };
+
+  // Handle manual capture button click to show file input
+  const handleCaptureVINClick = () => {
+    const input = document.getElementById('vin-capture-input');
+    if (input) input.click();
+  };
+
+  // Handle file input change - process selected image
+  const handleVINImageCapture = async (event) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setProcessingCapture(true);
+      setStatus('Processing captured image...');
+
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const img = new Image();
+        img.onload = async () => {
+          const canvas = document.createElement('canvas');
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+
+          // Detect VIN from captured image
+          const result = await processStaticImage(imageData);
+
+          if (result && result.vin) {
+            setCaptureResult(result);
+            setProcessingCapture(false);
+
+            // Decode VIN to get vehicle info
+            await decodeVINAndGetInfo(result.vin);
+          } else {
+            setCaptureResult({
+              vin: null,
+              source: 'Captured Image',
+              confidence: 0
+            });
+            setProcessingCapture(false);
+          }
+        };
+        img.src = e.target?.result;
+      };
+      reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Error processing captured image:', err);
+      setCaptureResult({
+        vin: null,
+        source: 'Captured Image',
+        confidence: 0
+      });
+      setProcessingCapture(false);
+    }
+
+    // Reset input
+    event.target.value = '';
   };
 
   const handleVINDetection = (vin, source) => {
@@ -2625,6 +2786,43 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               </div>
             </div>
 
+            {/* Capture VIN Button - Manual fallback option */}
+            {cameraReady && !capturedImageData && (
+              <button
+                onClick={handleCaptureVINClick}
+                style={{
+                  position: 'absolute',
+                  bottom: orientation === 'landscape' ? '80px' : '100px',
+                  right: orientation === 'landscape' ? '20px' : '20px',
+                  padding: '12px 16px',
+                  backgroundColor: '#4F46E5',
+                  color: 'white',
+                  border: 'none',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  fontWeight: '600',
+                  cursor: 'pointer',
+                  zIndex: 3,
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  transition: 'all 0.2s ease'
+                }}
+              >
+                📸 Capture VIN
+              </button>
+            )}
+
+            {/* Hidden file input for capturing VIN */}
+            <input
+              id="vin-capture-input"
+              type="file"
+              accept="image/*"
+              onChange={handleVINImageCapture}
+              style={{ display: 'none' }}
+            />
+
             {/* Static Instruction Text */}
             <div style={{
               position: 'absolute',
@@ -2648,7 +2846,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       {/* Capture Result Modal */}
       {captureResult && (
         <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0, 0, 0, 0.7)', zIndex: 10001, display: 'flex', alignItems: 'flex-end' }}>
-          <div style={{ width: '100%', backgroundColor: 'white', borderRadius: '16px 16px 0 0', padding: '32px 24px 24px', textAlign: 'center', animation: 'slideUp 0.3s ease-out' }}>
+          <div style={{ width: '100%', backgroundColor: 'white', borderRadius: '16px 16px 0 0', padding: '32px 24px 24px', textAlign: 'center', animation: 'slideUp 0.3s ease-out', maxHeight: '90vh', overflowY: 'auto' }}>
             {captureResult.vin ? (
               <>
                 <p style={{ fontSize: '14px', color: '#64748B', margin: '0 0 12px 0', fontWeight: '500' }}>✅ VIN Detected from Image</p>
@@ -2657,11 +2855,49 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
                   {captureResult.source} • {(captureResult.confidence * 100).toFixed(0)}% confidence
                 </p>
 
+                {/* Vehicle Info Decoded from VIN */}
+                {vinDecodeResult && (
+                  <div style={{
+                    backgroundColor: '#F8FAFC',
+                    borderRadius: '8px',
+                    padding: '16px',
+                    marginBottom: '24px',
+                    textAlign: 'left',
+                    border: '1px solid #E2E8F0'
+                  }}>
+                    <p style={{ fontSize: '12px', fontWeight: '600', color: '#64748B', margin: '0 0 12px 0', textTransform: 'uppercase' }}>Vehicle Information</p>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                      <div>
+                        <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0', fontWeight: '500' }}>Year</p>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#1E293B', margin: '4px 0 0 0' }}>{vinDecodeResult.year}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0', fontWeight: '500' }}>Make</p>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#1E293B', margin: '4px 0 0 0' }}>{vinDecodeResult.make}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0', fontWeight: '500' }}>Model</p>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#1E293B', margin: '4px 0 0 0' }}>{vinDecodeResult.model}</p>
+                      </div>
+                      <div>
+                        <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0', fontWeight: '500' }}>Engine</p>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#1E293B', margin: '4px 0 0 0' }}>{vinDecodeResult.engine}</p>
+                      </div>
+                      <div style={{ gridColumn: '1 / -1' }}>
+                        <p style={{ fontSize: '11px', color: '#94A3B8', margin: '0', fontWeight: '500' }}>Body Type</p>
+                        <p style={{ fontSize: '14px', fontWeight: '600', color: '#1E293B', margin: '4px 0 0 0' }}>{vinDecodeResult.bodyType}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display: 'flex', gap: '12px' }}>
                   <button
                     onClick={() => {
                       setCaptureResult(null);
                       setCapturedImageData(null);
+                      setVinDecodeResult(null);
                     }}
                     style={{
                       flex: 1,
@@ -2682,6 +2918,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
                       handleVINDetection(captureResult.vin, captureResult.source);
                       setCaptureResult(null);
                       setCapturedImageData(null);
+                      setVinDecodeResult(null);
                     }}
                     style={{
                       flex: 1,
@@ -2709,6 +2946,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
                   onClick={() => {
                     setCaptureResult(null);
                     setCapturedImageData(null);
+                    setVinDecodeResult(null);
                   }}
                   style={{
                     width: '100%',
