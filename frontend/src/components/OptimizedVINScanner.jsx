@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Tesseract from 'tesseract.js';
 import Quagga from '@ericblade/quagga2';
+import { detectAndOptimizeForFont, applyFontSpecificCorrections } from '../utils/fontDetection';
 
 export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   const [orientation, setOrientation] = useState('portrait');
@@ -364,19 +365,28 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     }
   };
 
-  // NEW: Aggressive OCR detection with multiple strategies
-  const detectOCRInStaticAggressive = async (imageData) => {
+  // NEW: Aggressive OCR detection with font-specific optimization
+  const detectOCRInStaticAggressive = async (imageData, detectedVINHint = null) => {
     if (!ocrWorkerRef.current) return null;
 
     try {
+      // NEW: Detect manufacturer and apply font-specific preprocessing
+      console.log('🏭 Analyzing label font and manufacturer...');
+      const fontOptimization = await detectAndOptimizeForFont(imageData, detectedVINHint);
+      const preprocessedData = fontOptimization.optimized || imageData;
+
+      if (fontOptimization.manufacturer) {
+        console.log(`✅ Font detected: ${fontOptimization.manufacturer} (${fontOptimization.fontData.fonts.join(', ')})`);
+      }
+
       // For curved barcode images, focus on text VIN region (usually below/inside barcode area)
       // Try scanning FULL image first (OCR works better on full context)
 
       const canvas = document.createElement('canvas');
-      canvas.width = imageData.width;
-      canvas.height = imageData.height;
+      canvas.width = preprocessedData.width;
+      canvas.height = preprocessedData.height;
       const ctx = canvas.getContext('2d');
-      ctx.putImageData(imageData, 0, 0);
+      ctx.putImageData(preprocessedData, 0, 0);
 
       // Target regions for VIN text (where text is usually printed on curved barcode labels)
       const regions = [
@@ -485,12 +495,18 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
   };
 
   // NEW: Aggressive VIN extraction - optimized for curved barcode images
-  const extractVINAggressively = (text) => {
+  const extractVINAggressively = (text, manufacturer = null) => {
     console.log(`  Extracting VIN from text (length: ${text.length})...`);
 
     // Normalize text
     let normalized = text.toUpperCase();
     normalized = correctMonospacedOCRErrors(normalized);
+
+    // Apply manufacturer-specific error correction
+    if (manufacturer) {
+      normalized = applyFontSpecificCorrections(normalized, manufacturer);
+      console.log(`  Applied ${manufacturer} font corrections`);
+    }
 
     // AGGRESSIVE STRATEGY 1: Look for VIN with common markers (curved barcodes often have these)
     const markedVINs = normalized.match(/[\*_\-]?([A-Z0-9]{17})[\*_\-]?/g);
