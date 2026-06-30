@@ -2,6 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import helmet from 'helmet';
+import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import { initializeDatabase } from './db.js';
 
 import authRoutes from './routes/auth.js';
@@ -21,6 +24,56 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Get Vercel URL from environment or use localhost
 const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 console.log(`🌐 Allowing CORS from frontend: ${frontendUrl}`);
+
+// Rate limiters for security
+const generalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // Limit each IP to 100 requests per windowMs
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // Limit each IP to 5 auth attempts per windowMs
+  message: 'Too many login/register attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+  skipSuccessfulRequests: true, // Only count failed requests
+});
+
+const oauthLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // Limit OAuth attempts
+  message: 'Too many OAuth attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply security headers with Helmet
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "accounts.google.com"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", 'data:', 'https:'],
+      connectSrc: ["'self'", 'https://oauth2.googleapis.com', 'https://accounts.google.com'],
+      frameSrc: ["'self'", 'accounts.google.com'],
+    },
+  },
+  hsts: {
+    maxAge: 31536000, // 1 year in seconds
+    includeSubDomains: true,
+    preload: true,
+  },
+  frameguard: { action: 'deny' },
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+}));
+
+// Apply general rate limiter to all requests
+app.use(generalLimiter);
 
 // Configure CORS for Google Sign-In with proper headers
 const corsOptions = {
@@ -46,11 +99,12 @@ const corsOptions = {
 
 app.use(cors(corsOptions));
 
-// Add security headers AFTER cors
+// Add custom security headers AFTER cors
 app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin-allow-popups');
   res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   res.setHeader('Access-Control-Max-Age', '86400'); // 24 hours for preflight caching
+  res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains; preload');
   next();
 });
 
@@ -59,6 +113,7 @@ app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser());
 
 // Initialize database with error handling
 try {
@@ -87,11 +142,11 @@ app.get('/', (req, res) => {
   });
 });
 
-// Auth routes (public)
-app.use('/api/auth', authRoutes);
+// Auth routes (public) - with rate limiting
+app.use('/api/auth', authLimiter, authRoutes);
 
-// OAuth routes (public)
-app.use('/api/oauth', oauthRoutes);
+// OAuth routes (public) - with rate limiting
+app.use('/api/oauth', oauthLimiter, oauthRoutes);
 
 // Protected routes (require authentication)
 app.use('/api/vehicles', authMiddleware, vinRoutes);

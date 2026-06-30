@@ -20,11 +20,15 @@ export function AuthProvider({ children }) {
 
   const verifyToken = async (token) => {
     try {
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      // If a token is provided, set it in Authorization header
+      if (token) {
+        api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      }
       const response = await api.post('/auth/verify');
       setUser(response.data.user);
       setError('');
     } catch (err) {
+      // Token verification failed, clear localStorage and headers
       localStorage.removeItem('token');
       delete api.defaults.headers.common['Authorization'];
       setUser(null);

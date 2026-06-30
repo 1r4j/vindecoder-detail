@@ -4,7 +4,8 @@ const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
 
 const api = axios.create({
   baseURL: API_BASE,
-  timeout: 10000
+  timeout: 10000,
+  withCredentials: true // Send cookies with every request (for httpOnly auth cookies)
 });
 
 export const vehicleService = {

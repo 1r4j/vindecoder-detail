@@ -51,45 +51,6 @@ router.post('/google/callback', async (req, res) => {
   }
 });
 
-// Apple OAuth Callback
-router.post('/apple/callback', async (req, res) => {
-  try {
-    const { identityToken, user } = req.body;
-
-    if (!identityToken) {
-      return res.status(400).json({
-        error: 'Identity token is required'
-      });
-    }
-
-    // Note: In production, you should verify the JWT token signature
-    // For now, we'll accept the token as provided by Apple
-    // In production, use a JWT library to verify the signature
-
-    const profile = {
-      id: user?.localizedFamilyName || identityToken,
-      displayName: user?.name?.firstName || 'Apple User',
-      emails: [{ value: user?.email || `${user?.localizedFamilyName}@appleid.apple.com` }],
-      photos: []
-    };
-
-    const result = findOrCreateOAuthUser('apple', profile);
-
-    res.json({
-      success: true,
-      token: result.token,
-      user: result.user,
-      isNewUser: result.isNewUser,
-      linked: result.linked || false
-    });
-  } catch (error) {
-    console.error('Apple OAuth error:', error);
-    res.status(400).json({
-      error: error.message || 'Apple authentication failed'
-    });
-  }
-});
-
 // Get linked providers (protected)
 router.get('/providers', authMiddleware, (req, res) => {
   try {
@@ -110,7 +71,7 @@ router.post('/unlink/:provider', authMiddleware, (req, res) => {
   try {
     const { provider } = req.params;
 
-    if (!['google', 'apple'].includes(provider)) {
+    if (!['google'].includes(provider)) {
       return res.status(400).json({
         error: 'Invalid provider'
       });

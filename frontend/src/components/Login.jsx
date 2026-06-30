@@ -106,36 +106,6 @@ export default function Login({ onSuccess }) {
             <div id="google-signin-button" style={{ width: '100%', display: 'flex', justifyContent: 'center' }}></div>
           </div>
 
-          {/* Apple Sign-In Button */}
-          <button
-            type="button"
-            onClick={async () => {
-              setOauthLoading(true);
-              setError('Apple Sign-In coming soon');
-              setOauthLoading(false);
-            }}
-            disabled={oauthLoading}
-            style={{
-              width: '100%',
-              padding: '12px',
-              background: '#000',
-              color: 'white',
-              border: 'none',
-              borderRadius: '8px',
-              fontSize: '14px',
-              fontWeight: '600',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: '8px',
-              opacity: 0.7,
-              marginBottom: '24px'
-            }}
-          >
-            🍎 Continue with Apple (Coming Soon)
-          </button>
-
           <div style={{
             display: 'flex',
             alignItems: 'center',

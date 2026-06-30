@@ -1,7 +1,11 @@
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key-change-in-production';
+const JWT_SECRET = process.env.JWT_SECRET;
 const TOKEN_EXPIRY = '7d';
+
+if (!JWT_SECRET) {
+  throw new Error('❌ CRITICAL: JWT_SECRET environment variable must be set in production');
+}
 
 export function generateToken(userId) {
   return jwt.sign({ userId }, JWT_SECRET, { expiresIn: TOKEN_EXPIRY });
@@ -16,8 +20,17 @@ export function verifyToken(token) {
 }
 
 export function authMiddleware(req, res, next) {
+  // Try to get token from Authorization header first (for API calls)
+  let token = null;
   const authHeader = req.headers.authorization;
-  const token = authHeader && authHeader.split(' ')[1];
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.split(' ')[1];
+  }
+
+  // Fall back to cookie (for browser requests)
+  if (!token && req.cookies && req.cookies.authToken) {
+    token = req.cookies.authToken;
+  }
 
   if (!token) {
     return res.status(401).json({
