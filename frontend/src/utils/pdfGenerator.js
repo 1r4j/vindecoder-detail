@@ -447,8 +447,11 @@ export function generateConsolidatedPDF({
       const serviceName = service.name || service.serviceName || 'Service';
       const unitPrice = parseFloat(service.rate || service.defaultPrice || service.price || 0).toFixed(2);
       const lineTotal = (parseFloat(unitPrice) * qty).toFixed(2);
+      const invoiceNum = invoice.invoiceNumber || 'N/A';
 
-      doc.text(serviceName, col1X, yPosition);
+      // Service name with invoice number
+      const serviceWithInvoice = `${serviceName} (${invoiceNum})`;
+      doc.text(serviceWithInvoice, col1X, yPosition);
       doc.text(qty.toString(), col2X, yPosition);
       doc.text(`${settings?.currency || '$'}${unitPrice}`, col3X, yPosition);
       doc.text(`${settings?.currency || '$'}${lineTotal}`, col4X, yPosition, { align: 'right' });
