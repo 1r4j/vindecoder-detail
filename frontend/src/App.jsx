@@ -48,7 +48,10 @@ function App() {
   }
 
   if (!isAuthenticated) {
-    return <Login onSuccess={() => {}} />;
+    return <Login onSuccess={() => {
+      // Reload page to refresh auth context after successful login
+      window.location.reload();
+    }} />;
   }
 
   return (
