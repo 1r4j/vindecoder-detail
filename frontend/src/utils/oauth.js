@@ -32,19 +32,9 @@ export function initializeGoogleButton(buttonId, onSuccess) {
       console.log('   Credential present:', !!response.credential);
       console.log('   Response keys:', Object.keys(response));
 
-      try {
-        const result = await api.post('/oauth/google/callback', {
-          token: response.credential
-        });
-
-        localStorage.setItem('token', result.data.token);
-        api.defaults.headers.common['Authorization'] = `Bearer ${result.data.token}`;
-
-        onSuccess(result.data);
-      } catch (error) {
-        console.error('Google login error:', error);
-        throw new Error(error.response?.data?.error || 'Google login failed');
-      }
+      // Pass the Google response object directly to the callback
+      // Let Login.jsx handle the credential extraction and backend communication
+      onSuccess(response);
     }
   });
 

@@ -17,28 +17,32 @@ export default function Login({ onSuccess }) {
     loadGoogleSignIn(() => {
       try {
         console.log('🔄 Initializing Google Sign-In...');
-        initializeGoogleButton('google-signin-button', async (response) => {
+        initializeGoogleButton('google-signin-button', async (googleResponse) => {
           console.log('✅ Google Sign-In callback triggered');
+          console.log('📋 Google response received, keys:', Object.keys(googleResponse));
           setOauthLoading(true);
           try {
-            // Google Sign-In returns credential (JWT token), not response.user.id_token
-            const token = response.credential;
+            // Google Sign-In returns credential in the response object
+            const token = googleResponse.credential;
             console.log('🔑 Token received:', token ? '✅ Yes' : '❌ No');
+            console.log('📝 Response object keys:', Object.keys(googleResponse));
 
             if (!token) {
               console.error('❌ No credential received from Google');
-              console.log('📝 Response object keys:', Object.keys(response));
+              console.error('Response object:', googleResponse);
               throw new Error('No credential received from Google');
             }
 
             console.log('📤 Sending token to backend...');
             const result = await handleGoogleSignIn(token);
+            console.log('✅ Backend response:', result);
             if (result.success) {
               console.log('✅ Login successful');
               if (onSuccess) onSuccess();
             }
           } catch (err) {
             console.error('❌ Google login error:', err);
+            console.error('Full error:', err);
             setError(err.message || 'Google login failed');
           } finally {
             setOauthLoading(false);
