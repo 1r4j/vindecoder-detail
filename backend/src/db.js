@@ -49,6 +49,8 @@ class SimpleDB {
       }, null, 2));
     } catch (err) {
       console.error('Failed to save data:', err.message);
+      console.error('Data directory:', dataDir);
+      console.error('Full error:', err);
     }
   }
 

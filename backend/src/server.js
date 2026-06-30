@@ -22,7 +22,14 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-initializeDatabase();
+// Initialize database with error handling
+try {
+  initializeDatabase();
+  console.log('✅ Database initialization started...');
+} catch (err) {
+  console.error('❌ Database initialization error:', err.message);
+  console.error('Full error:', err);
+}
 
 // Root endpoint
 app.get('/', (req, res) => {
@@ -84,7 +91,29 @@ app.use((err, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
-  console.log(`VIN Decoder API running on http://localhost:${PORT}`);
-  console.log(`Database initialized at ${path.join(__dirname, '../data/app.db')}`);
+const server = app.listen(PORT, () => {
+  console.log(`✅ VIN Decoder API running on http://localhost:${PORT}`);
+  console.log(`✅ Database initialized`);
+  console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`✅ All routes loaded successfully`);
+});
+
+// Handle startup errors
+server.on('error', (err) => {
+  console.error('❌ Server error:', err.message);
+  console.error('Full error:', err);
+  process.exit(1);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught exception:', err.message);
+  console.error('Full error:', err);
+  process.exit(1);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled rejection at:', promise, 'reason:', reason);
+  process.exit(1);
 });
