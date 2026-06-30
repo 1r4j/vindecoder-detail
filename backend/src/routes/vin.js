@@ -7,6 +7,7 @@ const router = express.Router();
 router.post('/decode', async (req, res) => {
   try {
     const { vin } = req.body;
+    const userId = req.userId;
 
     if (!validateVIN(vin)) {
       return res.status(400).json({
@@ -14,11 +15,11 @@ router.post('/decode', async (req, res) => {
       });
     }
 
-    let vehicleData = getVehicleByVIN(vin);
+    let vehicleData = getVehicleByVIN(vin, userId);
 
     if (!vehicleData) {
       vehicleData = await decodeVIN(vin);
-      vehicleData = saveVehicle(vehicleData);
+      vehicleData = saveVehicle(vehicleData, userId);
     }
 
     res.json({
@@ -36,8 +37,9 @@ router.get('/list', (req, res) => {
   try {
     const limit = parseInt(req.query.limit) || 100;
     const offset = parseInt(req.query.offset) || 0;
+    const userId = req.userId;
 
-    const vehicles = getAllVehicles(limit, offset);
+    const vehicles = getAllVehicles(userId, limit, offset);
 
     res.json({
       success: true,
@@ -53,6 +55,7 @@ router.get('/list', (req, res) => {
 router.get('/search', (req, res) => {
   try {
     const { q } = req.query;
+    const userId = req.userId;
 
     if (!q || q.length < 2) {
       return res.status(400).json({
@@ -60,7 +63,7 @@ router.get('/search', (req, res) => {
       });
     }
 
-    const vehicles = searchVehicles(q);
+    const vehicles = searchVehicles(q, userId);
 
     res.json({
       success: true,
@@ -76,8 +79,9 @@ router.get('/search', (req, res) => {
 router.get('/:vin', (req, res) => {
   try {
     const { vin } = req.params;
+    const userId = req.userId;
 
-    const vehicle = getVehicleByVIN(vin);
+    const vehicle = getVehicleByVIN(vin, userId);
 
     if (!vehicle) {
       return res.status(404).json({
@@ -100,6 +104,7 @@ router.patch('/:vin/color', (req, res) => {
   try {
     const { vin } = req.params;
     const { color } = req.body;
+    const userId = req.userId;
 
     if (!color) {
       return res.status(400).json({
@@ -107,7 +112,7 @@ router.patch('/:vin/color', (req, res) => {
       });
     }
 
-    const vehicle = updateVehicleColor(vin, color);
+    const vehicle = updateVehicleColor(vin, color, userId);
 
     res.json({
       success: true,

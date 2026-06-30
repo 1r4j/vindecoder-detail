@@ -1,6 +1,6 @@
 import db from '../db.js';
 
-export function saveVehicle(vehicleData) {
+export function saveVehicle(vehicleData, userId) {
   const {
     vin,
     year,
@@ -20,8 +20,8 @@ export function saveVehicle(vehicleData) {
     const stmt = db.prepare(`
       INSERT OR IGNORE INTO vehicles (
         vin, year, make, model, color, bodyType, engineType, transmission,
-        driveType, gvwr, plant, rawData
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        driveType, gvwr, plant, rawData, userId
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     stmt.run(
@@ -36,31 +36,32 @@ export function saveVehicle(vehicleData) {
       driveType,
       gvwr,
       plant,
-      JSON.stringify(rawData)
+      JSON.stringify(rawData),
+      userId
     );
 
-    return getVehicleByVIN(vin);
+    return getVehicleByVIN(vin, userId);
   } catch (error) {
     throw new Error(`Failed to save vehicle: ${error.message}`);
   }
 }
 
-export function updateVehicleColor(vin, color) {
+export function updateVehicleColor(vin, color, userId) {
   try {
     db.prepare(`
-      UPDATE vehicles SET color = ? WHERE vin = ?
-    `).run(color, vin);
+      UPDATE vehicles SET color = ? WHERE vin = ? AND userId = ?
+    `).run(color, vin, userId);
 
-    return getVehicleByVIN(vin);
+    return getVehicleByVIN(vin, userId);
   } catch (error) {
     throw new Error(`Failed to update vehicle color: ${error.message}`);
   }
 }
 
-export function getVehicleByVIN(vin) {
+export function getVehicleByVIN(vin, userId) {
   const vehicle = db.prepare(`
-    SELECT * FROM vehicles WHERE vin = ?
-  `).get(vin);
+    SELECT * FROM vehicles WHERE vin = ? AND userId = ?
+  `).get(vin, userId);
 
   if (vehicle && vehicle.rawData) {
     vehicle.rawData = JSON.parse(vehicle.rawData);
@@ -69,10 +70,10 @@ export function getVehicleByVIN(vin) {
   return vehicle || null;
 }
 
-export function getAllVehicles(limit = 100, offset = 0) {
+export function getAllVehicles(userId, limit = 100, offset = 0) {
   const vehicles = db.prepare(`
-    SELECT * FROM vehicles ORDER BY scannedAt DESC LIMIT ? OFFSET ?
-  `).all(limit, offset);
+    SELECT * FROM vehicles WHERE userId = ? ORDER BY scannedAt DESC LIMIT ? OFFSET ?
+  `).all(userId, limit, offset);
 
   return vehicles.map(vehicle => {
     if (vehicle.rawData) {
@@ -99,14 +100,14 @@ export function deleteVehicle(id) {
   return { success: true };
 }
 
-export function searchVehicles(query) {
+export function searchVehicles(query, userId) {
   const searchTerm = `%${query}%`;
   const vehicles = db.prepare(`
     SELECT * FROM vehicles
-    WHERE vin LIKE ? OR make LIKE ? OR model LIKE ?
+    WHERE userId = ? AND (vin LIKE ? OR make LIKE ? OR model LIKE ?)
     ORDER BY scannedAt DESC
     LIMIT 20
-  `).all(searchTerm, searchTerm, searchTerm);
+  `).all(userId, searchTerm, searchTerm, searchTerm);
 
   return vehicles.map(vehicle => {
     if (vehicle.rawData) {

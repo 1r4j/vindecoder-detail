@@ -75,17 +75,19 @@ class SimpleDB {
               gvwr: params[9] || '',
               plant: params[10] || '',
               rawData: params[11] || null,
+              userId: params[12],
               scannedAt: new Date().toISOString()
             };
 
-            const existing = db.vehicles.findIndex(v => v.vin === params[0]);
+            const existing = db.vehicles.findIndex(v => v.vin === params[0] && v.userId === params[12]);
             if (existing === -1) {
               db.vehicles.push(vehicle);
               db.save();
             }
           } else if (sql.includes('UPDATE') && sql.includes('vehicles')) {
             const vin = params[1];
-            const vehicle = db.vehicles.find(v => v.vin === vin);
+            const userId = params[2];
+            const vehicle = db.vehicles.find(v => v.vin === vin && v.userId === userId);
             if (vehicle) {
               vehicle.color = params[0];
               db.save();
@@ -149,7 +151,9 @@ class SimpleDB {
       get: function(...params) {
         try {
           if (sql.includes('SELECT') && sql.includes('WHERE')) {
-            if (sql.includes('vehicles') && sql.includes('vin')) {
+            if (sql.includes('vehicles') && sql.includes('vin') && sql.includes('userId')) {
+              return db.vehicles.find(v => v.vin === params[0] && v.userId === params[1]) || null;
+            } else if (sql.includes('vehicles') && sql.includes('vin')) {
               return db.vehicles.find(v => v.vin === params[0]) || null;
             } else if (sql.includes('invoices') && sql.includes('id')) {
               return db.invoices.find(i => i.id === params[0]) || null;
@@ -169,14 +173,22 @@ class SimpleDB {
       all: function(...params) {
         try {
           if (sql.includes('SELECT') && sql.includes('vehicles')) {
-            if (sql.includes('WHERE LIKE')) {
-              const searchTerm = params[0];
+            if (sql.includes('WHERE') && sql.includes('LIKE')) {
+              const userId = params[0];
+              const searchTerm = params[1];
               const pattern = searchTerm.replace(/%/g, '').toLowerCase();
               return db.vehicles.filter(v =>
-                v.vin.toLowerCase().includes(pattern) ||
-                v.make.toLowerCase().includes(pattern) ||
-                (v.model && v.model.toLowerCase().includes(pattern))
+                v.userId === userId && (
+                  v.vin.toLowerCase().includes(pattern) ||
+                  v.make.toLowerCase().includes(pattern) ||
+                  (v.model && v.model.toLowerCase().includes(pattern))
+                )
               ).slice(0, 20);
+            } else if (sql.includes('WHERE userId')) {
+              const userId = params[0];
+              const limit = params[1] || 100;
+              const offset = params[2] || 0;
+              return db.vehicles.filter(v => v.userId === userId).reverse().slice(offset, offset + limit);
             } else {
               const limit = params[0] || 100;
               const offset = params[1] || 0;
