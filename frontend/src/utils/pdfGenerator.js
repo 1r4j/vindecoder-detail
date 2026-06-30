@@ -474,22 +474,10 @@ export function generateConsolidatedPDF({
   yPosition += 3;
 
   // ===== SUMMARY SECTION =====
+  // Note: No tax recalculation for consolidated invoices
+  // Each original invoice already includes tax in its total
   const summaryLabelX = pageWidth - margin - 70;
   const summaryValueX = pageWidth - margin - 2;
-
-  doc.setFontSize(9);
-  doc.setFont(undefined, 'normal');
-  doc.setTextColor(80, 80, 80);
-  doc.text('Subtotal:', summaryLabelX, yPosition);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`${settings?.currency || '$'}${parseFloat(consolidatedInvoice.subtotal || 0).toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
-  yPosition += 6;
-
-  doc.setTextColor(80, 80, 80);
-  doc.text(`Tax (${settings?.taxRate || 8}%):`, summaryLabelX, yPosition);
-  doc.setTextColor(0, 0, 0);
-  doc.text(`${settings?.currency || '$'}${parseFloat(consolidatedInvoice.tax || 0).toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
-  yPosition += 8;
 
   doc.setLineWidth(0.5);
   doc.setDrawColor(50, 50, 50);
@@ -498,7 +486,7 @@ export function generateConsolidatedPDF({
   doc.setFont(undefined, 'bold');
   doc.setFontSize(11);
   doc.setTextColor(0, 0, 0);
-  doc.text('TOTAL:', summaryLabelX, yPosition + 3);
+  doc.text('TOTAL DUE:', summaryLabelX, yPosition + 3);
   doc.text(`${settings?.currency || '$'}${parseFloat(consolidatedInvoice.total || 0).toFixed(2)}`, summaryValueX, yPosition + 3, { align: 'right' });
 
   // Save
