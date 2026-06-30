@@ -1,6 +1,6 @@
 import db from '../db.js';
 
-const AUDIT_EVENTS = {
+export const AUDIT_EVENTS = {
   LOGIN_SUCCESS: 'LOGIN_SUCCESS',
   LOGIN_FAILED: 'LOGIN_FAILED',
   REGISTER_SUCCESS: 'REGISTER_SUCCESS',
