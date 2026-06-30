@@ -325,38 +325,35 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
         console.log('⚠️  Image does not appear to be a vehicle label');
       }
 
-      // FIX #2: Apply adaptive preprocessing
-      console.log('🎨 Applying adaptive preprocessing...');
-      const adaptiveData = adaptivePreprocess(JSON.parse(JSON.stringify(imageData)));
-
-      // NEW PRIORITY: Focus on reading TEXT VIN (more reliable than barcode decoding)
-      // Most vehicle labels have text VIN printed below barcode
-
-      // Method 1: Try aggressive OCR extraction FIRST (most reliable for curved barcodes)
-      console.log('📝 Method 1: Aggressive OCR text extraction (PRIMARY)...');
-      const ocrResult = await detectOCRInStaticAggressive(adaptiveData);
-      if (ocrResult) {
-        console.log(`✅ OCR TEXT VIN found: ${ocrResult.vin} (${ocrResult.source})`);
-        return ocrResult;
-      }
-
-      // Method 2: Try barcode detection (works for straight barcodes)
-      console.log('📊 Method 2: Barcode detection...');
-      const barcodeResult = await detectBarcodeInStatic(adaptiveData);
+      // PRIORITY 1: BARCODE DETECTION (Most authoritative)
+      // Barcodes are the official VIN encoding - try these FIRST with aggressive preprocessing
+      console.log('🔴 PRIORITY 1: BARCODE DETECTION (Primary method)...');
+      const barcodeResult = await detectBarcodeWithUltraPreprocessing(imageData);
       if (barcodeResult) {
-        console.log(`✅ Barcode found: ${barcodeResult.vin} (${barcodeResult.source})`);
+        console.log(`✅ BARCODE DECODED: ${barcodeResult.vin} (${barcodeResult.source})`);
         return barcodeResult;
       }
+      console.log('❌ Barcode detection failed - trying OCR fallback...');
 
-      // Method 3: Try pattern-based detection as fallback
-      console.log('🔍 Method 3: Pattern-based detection...');
-      const patternResult = await detectPatternInStatic(adaptiveData);
+      // PRIORITY 2: OCR TEXT EXTRACTION (Fallback)
+      // If barcode fails, read the printed text VIN
+      console.log('🟡 PRIORITY 2: OCR TEXT EXTRACTION (Fallback method)...');
+      const ocrResult = await detectOCRInStaticAggressive(imageData);
+      if (ocrResult) {
+        console.log(`✅ OCR TEXT VIN FOUND: ${ocrResult.vin} (${ocrResult.source})`);
+        return ocrResult;
+      }
+      console.log('❌ OCR failed - trying pattern detection...');
+
+      // PRIORITY 3: PATTERN DETECTION (Last resort)
+      console.log('🟢 PRIORITY 3: PATTERN DETECTION (Last resort)...');
+      const patternResult = await detectPatternInStatic(imageData);
       if (patternResult) {
-        console.log(`✅ Pattern found: ${patternResult.vin} (${patternResult.source})`);
+        console.log(`✅ PATTERN FOUND: ${patternResult.vin} (${patternResult.source})`);
         return patternResult;
       }
 
-      console.log('❌ No VIN detection methods succeeded');
+      console.log('❌ ALL DETECTION METHODS FAILED');
       return null;
     } catch (err) {
       console.error('Static image processing error:', err);
@@ -628,6 +625,240 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
     console.log(`    ❌ No valid VIN found in text`);
     return null;
+  };
+
+  // ULTRA-AGGRESSIVE BARCODE PREPROCESSING
+  const detectBarcodeWithUltraPreprocessing = async (imageData) => {
+    console.log('🔴 ULTRA-PREPROCESSING: Making barcode super clear and readable...');
+
+    return new Promise((resolve) => {
+      try {
+        // Create working copy
+        const workingData = JSON.parse(JSON.stringify(imageData));
+
+        // Try multiple barcode regions
+        const barcodeRegions = [
+          { name: 'Bottom 30%', y: 0.70, h: 0.30 },
+          { name: 'Bottom Half', y: 0.50, h: 0.50 },
+          { name: 'Center-Bottom', y: 0.45, h: 0.55 },
+          { name: 'Full Image', y: 0.00, h: 1.00 }
+        ];
+
+        const tryNextRegion = async (regionIndex) => {
+          if (regionIndex >= barcodeRegions.length) {
+            resolve(null);
+            return;
+          }
+
+          const region = barcodeRegions[regionIndex];
+          console.log(`  📍 Trying region: ${region.name}...`);
+
+          try {
+            const x = 0;
+            const y = Math.floor(workingData.height * region.y);
+            const width = workingData.width;
+            const height = Math.floor(workingData.height * region.h);
+
+            // Extract region
+            const regionData = new ImageData(width, height);
+            for (let py = 0; py < height; py++) {
+              for (let px = 0; px < width; px++) {
+                const srcIdx = ((y + py) * workingData.width + px) * 4;
+                const dstIdx = (py * width + px) * 4;
+                regionData.data[dstIdx] = workingData.data[srcIdx];
+                regionData.data[dstIdx + 1] = workingData.data[srcIdx + 1];
+                regionData.data[dstIdx + 2] = workingData.data[srcIdx + 2];
+                regionData.data[dstIdx + 3] = workingData.data[srcIdx + 3];
+              }
+            }
+
+            console.log(`    🎨 Applying preprocessing stages...`);
+            denoiseImage(regionData);
+            histogramEqualization(regionData);
+            extremeBinaryConversion(regionData);
+            morphologicalClose(regionData);
+            edgeEnhancement(regionData);
+
+            const canvas = new OffscreenCanvas(width, height);
+            const canvasCtx = canvas.getContext('2d');
+            canvasCtx.putImageData(regionData, 0, 0);
+
+            console.log(`    🔍 Attempting barcode decode (Code 128 & Code 39)...`);
+
+            Quagga.decodeSingle({
+              src: canvas,
+              numOfWorkers: 4,
+              inputStream: {
+                type: 'ImageData',
+                data: regionData
+              },
+              decoder: {
+                readers: ['code_128_reader', 'code_39_reader'],
+                debug: false
+              }
+            }, async (result) => {
+              if (result && result.codeResult) {
+                let code = result.codeResult.code?.trim();
+                if (code && code.length === 17) {
+                  code = correctMonospacedOCRErrors(code);
+                  const validation = validateVIN(code);
+                  if (validation.valid) {
+                    console.log(`    ✅ SUCCESS! Barcode decoded!`);
+                    console.log(`       VIN: ${code}`);
+                    console.log(`       Type: ${result.codeResult.format}`);
+                    resolve({
+                      vin: code,
+                      confidence: 0.98,
+                      source: `Barcode ${result.codeResult.format} (Ultra-Enhanced)`
+                    });
+                    return;
+                  } else {
+                    console.log(`    ⚠️  Code format wrong: ${code}`);
+                  }
+                } else if (code) {
+                  console.log(`    ⚠️  Wrong length: ${code.length} chars (need 17)`);
+                }
+              } else {
+                console.log(`    ❌ No barcode detected in this region`);
+              }
+
+              // Try next region
+              setTimeout(() => tryNextRegion(regionIndex + 1), 500);
+            });
+
+            // Timeout per region
+            setTimeout(() => tryNextRegion(regionIndex + 1), 2000);
+          } catch (err) {
+            console.error(`    Error processing region:`, err);
+            tryNextRegion(regionIndex + 1);
+          }
+        };
+
+        tryNextRegion(0);
+      } catch (err) {
+        console.error('Barcode preprocessing error:', err);
+        resolve(null);
+      }
+    });
+  };
+
+  // Denoise: Remove single-pixel noise
+  const denoiseImage = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    const temp = new Uint8ClampedArray(data);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        let avgNeighbor = 0;
+
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            if (dx === 0 && dy === 0) continue;
+            const nidx = ((y + dy) * width + (x + dx)) * 4;
+            const ngray = 0.299 * temp[nidx] + 0.587 * temp[nidx + 1] + 0.114 * temp[nidx + 2];
+            avgNeighbor += ngray;
+          }
+        }
+        avgNeighbor /= 8;
+
+        if (Math.abs(gray - avgNeighbor) > 100) {
+          const value = avgNeighbor > 128 ? 255 : 0;
+          data[idx] = data[idx + 1] = data[idx + 2] = value;
+        }
+      }
+    }
+  };
+
+  // Histogram equalization
+  const histogramEqualization = (imageData) => {
+    const data = imageData.data;
+    const histogram = new Array(256).fill(0);
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      histogram[Math.floor(gray)]++;
+    }
+
+    const cdf = new Array(256);
+    cdf[0] = histogram[0];
+    for (let i = 1; i < 256; i++) {
+      cdf[i] = cdf[i - 1] + histogram[i];
+    }
+
+    const minCdf = cdf[0];
+    for (let i = 0; i < 256; i++) {
+      cdf[i] = Math.round(((cdf[i] - minCdf) / (data.length / 4)) * 255);
+    }
+
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = Math.floor(0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]);
+      const equalized = cdf[gray];
+      data[i] = data[i + 1] = data[i + 2] = equalized;
+    }
+  };
+
+  // Extreme binary conversion
+  const extremeBinaryConversion = (imageData) => {
+    const data = imageData.data;
+    for (let i = 0; i < data.length; i += 4) {
+      const gray = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+      const binary = gray > 127 ? 255 : 0;
+      data[i] = data[i + 1] = data[i + 2] = binary;
+    }
+  };
+
+  // Morphological closing
+  const morphologicalClose = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    const temp = new Uint8ClampedArray(data);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        if (temp[idx] > 200) {
+          for (let dy = -1; dy <= 1; dy++) {
+            for (let dx = -1; dx <= 1; dx++) {
+              const nidx = ((y + dy) * width + (x + dx)) * 4;
+              data[nidx] = data[nidx + 1] = data[nidx + 2] = 255;
+            }
+          }
+        }
+      }
+    }
+  };
+
+  // Edge enhancement
+  const edgeEnhancement = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+    const temp = new Uint8ClampedArray(data);
+
+    for (let y = 1; y < height - 1; y++) {
+      for (let x = 1; x < width - 1; x++) {
+        const idx = (y * width + x) * 4;
+        let gx = 0, gy = 0;
+
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const nidx = ((y + dy) * width + (x + dx)) * 4;
+            const ngray = temp[nidx];
+            const kernel = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+            gx += ngray * kernel[dy + 1][dx + 1];
+          }
+        }
+
+        const edge = Math.abs(gx);
+        const enhanced = Math.min(255, temp[idx] + (edge > 50 ? 50 : 0));
+        data[idx] = data[idx + 1] = data[idx + 2] = enhanced;
+      }
+    }
   };
 
   // Method 1: Detect barcode in static image
