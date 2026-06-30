@@ -13,13 +13,25 @@ export function loadGoogleSignIn(callback) {
 // Initialize Google Sign-In Button
 export function initializeGoogleButton(buttonId, onSuccess) {
   if (!window.google) {
-    console.error('Google Sign-In library not loaded');
+    console.error('❌ Google Sign-In library not loaded');
+    return;
+  }
+
+  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+  console.log('🔐 Google Client ID:', clientId ? '✅ Set' : '❌ Missing');
+
+  if (!clientId) {
+    console.error('❌ VITE_GOOGLE_CLIENT_ID environment variable not set!');
     return;
   }
 
   window.google.accounts.id.initialize({
-    client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID || 'YOUR_GOOGLE_CLIENT_ID',
+    client_id: clientId,
     callback: async (response) => {
+      console.log('📍 Google callback received');
+      console.log('   Credential present:', !!response.credential);
+      console.log('   Response keys:', Object.keys(response));
+
       try {
         const result = await api.post('/oauth/google/callback', {
           token: response.credential

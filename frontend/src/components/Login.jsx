@@ -16,26 +16,36 @@ export default function Login({ onSuccess }) {
   useEffect(() => {
     loadGoogleSignIn(() => {
       try {
+        console.log('🔄 Initializing Google Sign-In...');
         initializeGoogleButton('google-signin-button', async (response) => {
+          console.log('✅ Google Sign-In callback triggered');
           setOauthLoading(true);
           try {
             // Google Sign-In returns credential (JWT token), not response.user.id_token
             const token = response.credential;
+            console.log('🔑 Token received:', token ? '✅ Yes' : '❌ No');
+
             if (!token) {
+              console.error('❌ No credential received from Google');
+              console.log('📝 Response object keys:', Object.keys(response));
               throw new Error('No credential received from Google');
             }
+
+            console.log('📤 Sending token to backend...');
             const result = await handleGoogleSignIn(token);
             if (result.success) {
+              console.log('✅ Login successful');
               if (onSuccess) onSuccess();
             }
           } catch (err) {
+            console.error('❌ Google login error:', err);
             setError(err.message || 'Google login failed');
           } finally {
             setOauthLoading(false);
           }
         });
       } catch (err) {
-        console.error('Failed to initialize Google Sign-In:', err);
+        console.error('❌ Failed to initialize Google Sign-In:', err);
       }
     });
   }, []);
