@@ -84,27 +84,37 @@ export default function InvoiceHistory() {
       } else if (invoice.consolidatedFrom) {
         isConsolidated = true;
         try {
-          // Try to parse as JSON
-          consolidatedIds = JSON.parse(invoice.consolidatedFrom);
-          if (!Array.isArray(consolidatedIds)) {
-            consolidatedIds = [];
-          }
+          // Try to parse as JSON array
+          const parsed = JSON.parse(invoice.consolidatedFrom);
+          consolidatedIds = Array.isArray(parsed) ? parsed : [];
         } catch (e) {
           // If JSON parse fails, try to split as comma-separated string
           try {
-            consolidatedIds = invoice.consolidatedFrom.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+            consolidatedIds = String(invoice.consolidatedFrom)
+              .split(',')
+              .map(id => parseInt(id.trim()))
+              .filter(id => !isNaN(id));
           } catch (e2) {
+            console.error('Failed to parse consolidatedFrom:', invoice.consolidatedFrom);
             consolidatedIds = [];
           }
         }
       }
+
+      console.log('Consolidated detection:', { isConsolidated, consolidatedIds, invoiceId: invoice.id });
 
       if (isConsolidated && consolidatedIds.length > 0) {
         // For consolidated invoices, fetch the original invoices
         try {
           const allInvoicesRes = await invoiceService.getList(500, 0);
           const allInvoices = allInvoicesRes.data.data || [];
-          const originalInvoices = allInvoices.filter(inv => consolidatedIds.includes(inv.id));
+
+          // Filter invoices by ID - handle both number and string IDs
+          const originalInvoices = allInvoices.filter(inv =>
+            consolidatedIds.includes(inv.id) || consolidatedIds.includes(parseInt(inv.id))
+          );
+
+          console.log('Original invoices found:', originalInvoices.length, 'Expected:', consolidatedIds.length);
 
           generateConsolidatedPDF({
             consolidatedInvoice: invoice,
@@ -124,6 +134,7 @@ export default function InvoiceHistory() {
         }
       } else if (isConsolidated) {
         // Consolidated but no original invoice IDs found - show as single invoice in consolidated format
+        console.warn('Consolidated invoice with no IDs found:', invoice.id);
         generateConsolidatedPDF({
           consolidatedInvoice: invoice,
           originalInvoices: [invoice],
