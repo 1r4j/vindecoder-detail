@@ -490,6 +490,20 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
     // Normalize text
     let normalized = text.toUpperCase();
+
+    // Remove common door-jamb label text that appears near VIN
+    // (Mercedes, BMW, Audi labels have regulatory text)
+    normalized = normalized
+      .replace(/MADE\s*IN\s*GERMANY/g, '')
+      .replace(/MADE\s*IN\s*JAPAN/g, '')
+      .replace(/THEFT\s*PREVENTION/g, '')
+      .replace(/DATE\s*OF\s*MANUFACTURE/g, '')
+      .replace(/SHOWN\s*ABOVE/g, '')
+      .replace(/CONFORMANCE/g, '')
+      .replace(/STANDARDS/g, '')
+      .replace(/FEDERAL\s*MOTOR/g, '')
+      .replace(/SAFETY.*?BUMPER/g, '');
+
     normalized = correctMonospacedOCRErrors(normalized);
 
     // AGGRESSIVE STRATEGY 1: Look for VIN with common markers (curved barcodes often have these)
@@ -1303,9 +1317,15 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
       const regions = [
+        // Standard barcode labels (VIN centered or below barcode)
         { x: 0.1, y: 0.35, w: 0.8, h: 0.15, name: 'Center' },
         { x: 0.05, y: 0.25, w: 0.9, h: 0.25, name: 'Upper-Center' },
-        { x: 0.05, y: 0.45, w: 0.9, h: 0.25, name: 'Lower-Center' }
+        { x: 0.05, y: 0.45, w: 0.9, h: 0.25, name: 'Lower-Center' },
+
+        // Door-jamb labels (Mercedes, BMW, Audi - VIN at bottom)
+        { x: 0.05, y: 0.60, w: 0.9, h: 0.12, name: 'VIN-Line-Bottom' },
+        { x: 0.05, y: 0.65, w: 0.9, h: 0.10, name: 'VIN-Exact' },
+        { x: 0.05, y: 0.58, w: 0.9, h: 0.15, name: 'VIN-With-Margin' }
       ];
 
       for (const region of regions) {
