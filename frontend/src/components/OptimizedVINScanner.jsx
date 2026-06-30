@@ -627,6 +627,306 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
     return null;
   };
 
+  // BARCODE DEWARPING - Handle curved/distorted barcodes
+  const deWarpBarcode = (imageData) => {
+    console.log(`      Dewarping strategies: Arc, Wave, Perspective, Radial...`);
+
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    // Try to detect barcode boundaries
+    const boundaries = detectBarcodeBoundaries(imageData);
+    if (!boundaries) {
+      console.log(`      ⚠️  Could not detect barcode boundaries`);
+      return imageData;
+    }
+
+    console.log(`      ✓ Detected barcode: top=${boundaries.top}, bottom=${boundaries.bottom}`);
+
+    // Detect distortion type
+    const distortion = detectDistortionType(boundaries);
+    console.log(`      ✓ Distortion type: ${distortion.type}`);
+
+    // Apply appropriate dewarping
+    let dewarped;
+    switch (distortion.type) {
+      case 'arc_inward':
+        dewarped = deWarpArcInward(imageData, boundaries);
+        break;
+      case 'arc_outward':
+        dewarped = deWarpArcOutward(imageData, boundaries);
+        break;
+      case 'wave':
+        dewarped = deWarpWave(imageData, boundaries);
+        break;
+      case 'perspective':
+        dewarped = deWarpPerspective(imageData, boundaries);
+        break;
+      case 'radial':
+        dewarped = deWarpRadial(imageData, boundaries);
+        break;
+      default:
+        dewarped = imageData;
+    }
+
+    return dewarped;
+  };
+
+  // Detect barcode boundaries
+  const detectBarcodeBoundaries = (imageData) => {
+    const data = imageData.data;
+    const width = imageData.width;
+    const height = imageData.height;
+
+    let topY = -1, bottomY = -1;
+    let leftX = width, rightX = 0;
+
+    // Scan horizontally for black pixels (barcode)
+    for (let y = 0; y < height; y++) {
+      let blackCount = 0;
+      for (let x = 0; x < width; x++) {
+        const idx = (y * width + x) * 4;
+        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        if (gray < 100) blackCount++;
+      }
+
+      // If significant black pixels, it's barcode area
+      if (blackCount > width * 0.1) {
+        if (topY === -1) topY = y;
+        bottomY = y;
+      }
+    }
+
+    if (topY === -1 || bottomY === -1) return null;
+
+    // Find left/right boundaries
+    for (let x = 0; x < width; x++) {
+      let blackCount = 0;
+      for (let y = topY; y <= bottomY; y++) {
+        const idx = (y * width + x) * 4;
+        const gray = 0.299 * data[idx] + 0.587 * data[idx + 1] + 0.114 * data[idx + 2];
+        if (gray < 100) blackCount++;
+      }
+      if (blackCount > (bottomY - topY) * 0.2) {
+        leftX = Math.min(leftX, x);
+        rightX = Math.max(rightX, x);
+      }
+    }
+
+    return { top: topY, bottom: bottomY, left: leftX, right: rightX };
+  };
+
+  // Detect distortion type by analyzing curvature
+  const detectDistortionType = (boundaries) => {
+    // Simple heuristic: check if top or bottom is more curved
+    const topCurved = Math.abs(boundaries.left - boundaries.right) > (boundaries.right - boundaries.left) * 0.2;
+    const heightToWidth = (boundaries.bottom - boundaries.top) / (boundaries.right - boundaries.left);
+
+    if (heightToWidth > 0.8) return { type: 'wave' };
+    if (heightToWidth < 0.3) return { type: 'arc_inward' };
+    return { type: 'arc_outward' };
+  };
+
+  // Dewarp arc (curved inward - like a smile)
+  const deWarpArcInward = (imageData, boundaries) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const output = new ImageData(width, height);
+    const data = imageData.data;
+    const outData = output.data;
+
+    const barWidth = boundaries.right - boundaries.left;
+    const barHeight = boundaries.bottom - boundaries.top;
+    const arcStrength = Math.min(barHeight / 4, barWidth / 8);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let srcX = x;
+        let srcY = y;
+
+        // Arc deformation: straighten curved barcode
+        if (y >= boundaries.top && y <= boundaries.bottom) {
+          const relY = (y - boundaries.top) / barHeight;
+          const arcBend = Math.sin(relY * Math.PI) * arcStrength;
+          srcX = x + arcBend;
+        }
+
+        srcX = Math.max(0, Math.min(width - 1, Math.round(srcX)));
+        srcY = Math.max(0, Math.min(height - 1, srcY));
+
+        const srcIdx = (srcY * width + srcX) * 4;
+        const dstIdx = (y * width + x) * 4;
+
+        outData[dstIdx] = data[srcIdx];
+        outData[dstIdx + 1] = data[srcIdx + 1];
+        outData[dstIdx + 2] = data[srcIdx + 2];
+        outData[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+
+    return output;
+  };
+
+  // Dewarp arc (curved outward - like an frown)
+  const deWarpArcOutward = (imageData, boundaries) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const output = new ImageData(width, height);
+    const data = imageData.data;
+    const outData = output.data;
+
+    const barWidth = boundaries.right - boundaries.left;
+    const barHeight = boundaries.bottom - boundaries.top;
+    const arcStrength = Math.min(barHeight / 4, barWidth / 8);
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let srcX = x;
+        let srcY = y;
+
+        if (y >= boundaries.top && y <= boundaries.bottom) {
+          const relY = (y - boundaries.top) / barHeight;
+          const arcBend = Math.sin(relY * Math.PI) * arcStrength * -1; // Negative for outward
+          srcX = x + arcBend;
+        }
+
+        srcX = Math.max(0, Math.min(width - 1, Math.round(srcX)));
+        srcY = Math.max(0, Math.min(height - 1, srcY));
+
+        const srcIdx = (srcY * width + srcX) * 4;
+        const dstIdx = (y * width + x) * 4;
+
+        outData[dstIdx] = data[srcIdx];
+        outData[dstIdx + 1] = data[srcIdx + 1];
+        outData[dstIdx + 2] = data[srcIdx + 2];
+        outData[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+
+    return output;
+  };
+
+  // Dewarp wave (undulating curve)
+  const deWarpWave = (imageData, boundaries) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const output = new ImageData(width, height);
+    const data = imageData.data;
+    const outData = output.data;
+
+    const barHeight = boundaries.bottom - boundaries.top;
+    const waveAmplitude = barHeight / 6;
+    const waveFrequency = 3;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let srcX = x;
+        let srcY = y;
+
+        if (y >= boundaries.top && y <= boundaries.bottom) {
+          const relY = (y - boundaries.top) / barHeight;
+          const waveBend = Math.sin(relY * Math.PI * waveFrequency) * waveAmplitude;
+          srcX = x + waveBend;
+        }
+
+        srcX = Math.max(0, Math.min(width - 1, Math.round(srcX)));
+        srcY = Math.max(0, Math.min(height - 1, srcY));
+
+        const srcIdx = (srcY * width + srcX) * 4;
+        const dstIdx = (y * width + x) * 4;
+
+        outData[dstIdx] = data[srcIdx];
+        outData[dstIdx + 1] = data[srcIdx + 1];
+        outData[dstIdx + 2] = data[srcIdx + 2];
+        outData[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+
+    return output;
+  };
+
+  // Dewarp perspective (trapezoid shape)
+  const deWarpPerspective = (imageData, boundaries) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const output = new ImageData(width, height);
+    const data = imageData.data;
+    const outData = output.data;
+
+    const barWidth = boundaries.right - boundaries.left;
+    const barHeight = boundaries.bottom - boundaries.top;
+    const perspectiveStrength = barWidth * 0.15;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        let srcX = x;
+        let srcY = y;
+
+        if (y >= boundaries.top && y <= boundaries.bottom) {
+          const relY = (y - boundaries.top) / barHeight;
+          const offset = (relY - 0.5) * perspectiveStrength;
+          srcX = x + offset;
+        }
+
+        srcX = Math.max(0, Math.min(width - 1, Math.round(srcX)));
+        srcY = Math.max(0, Math.min(height - 1, srcY));
+
+        const srcIdx = (srcY * width + srcX) * 4;
+        const dstIdx = (y * width + x) * 4;
+
+        outData[dstIdx] = data[srcIdx];
+        outData[dstIdx + 1] = data[srcIdx + 1];
+        outData[dstIdx + 2] = data[srcIdx + 2];
+        outData[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+
+    return output;
+  };
+
+  // Dewarp radial (barrel/pincushion distortion)
+  const deWarpRadial = (imageData, boundaries) => {
+    const width = imageData.width;
+    const height = imageData.height;
+    const output = new ImageData(width, height);
+    const data = imageData.data;
+    const outData = output.data;
+
+    const centerX = width / 2;
+    const centerY = (boundaries.top + boundaries.bottom) / 2;
+    const maxRadius = Math.sqrt(centerX * centerX + centerY * centerY);
+    const radialStrength = 0.15;
+
+    for (let y = 0; y < height; y++) {
+      for (let x = 0; x < width; x++) {
+        const dx = x - centerX;
+        const dy = y - centerY;
+        const radius = Math.sqrt(dx * dx + dy * dy);
+        const angle = Math.atan2(dy, dx);
+
+        const radiusRatio = radius / maxRadius;
+        const correctedRadius = radius / (1 + radiusRatio * radiusStrength);
+
+        let srcX = centerX + Math.cos(angle) * correctedRadius;
+        let srcY = centerY + Math.sin(angle) * correctedRadius;
+
+        srcX = Math.max(0, Math.min(width - 1, Math.round(srcX)));
+        srcY = Math.max(0, Math.min(height - 1, Math.round(srcY)));
+
+        const srcIdx = (srcY * width + srcX) * 4;
+        const dstIdx = (y * width + x) * 4;
+
+        outData[dstIdx] = data[srcIdx];
+        outData[dstIdx + 1] = data[srcIdx + 1];
+        outData[dstIdx + 2] = data[srcIdx + 2];
+        outData[dstIdx + 3] = data[srcIdx + 3];
+      }
+    }
+
+    return output;
+  };
+
   // ULTRA-AGGRESSIVE BARCODE PREPROCESSING
   const detectBarcodeWithUltraPreprocessing = async (imageData) => {
     console.log('🔴 ULTRA-PREPROCESSING: Making barcode super clear and readable...');
@@ -679,9 +979,13 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
             morphologicalClose(regionData);
             edgeEnhancement(regionData);
 
+            // NEW: BARCODE DEWARPING FOR CURVED/DISTORTED BARCODES
+            console.log(`    🔧 Dewarping for: Arc (inward/outward), Wave, Perspective, Radial...`);
+            const dewarped = deWarpBarcode(regionData);
+
             const canvas = new OffscreenCanvas(width, height);
             const canvasCtx = canvas.getContext('2d');
-            canvasCtx.putImageData(regionData, 0, 0);
+            canvasCtx.putImageData(dewarped, 0, 0);
 
             console.log(`    🔍 Attempting barcode decode (Code 128 & Code 39)...`);
 
@@ -690,7 +994,7 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               numOfWorkers: 4,
               inputStream: {
                 type: 'ImageData',
-                data: regionData
+                data: dewarped
               },
               decoder: {
                 readers: ['code_128_reader', 'code_39_reader'],
