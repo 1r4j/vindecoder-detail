@@ -96,6 +96,7 @@ const server = app.listen(PORT, () => {
   console.log(`✅ Database initialized`);
   console.log(`✅ Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`✅ All routes loaded successfully`);
+  console.log(`✅ Ready to accept requests`);
 });
 
 // Handle startup errors
@@ -104,6 +105,19 @@ server.on('error', (err) => {
   console.error('Full error:', err);
   process.exit(1);
 });
+
+// Handle graceful shutdown
+const gracefulShutdown = (signal) => {
+  console.log(`\n📛 Received ${signal}, starting graceful shutdown...`);
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+};
+
+// Listen for shutdown signals
+process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
+process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 
 // Handle uncaught exceptions
 process.on('uncaughtException', (err) => {
