@@ -152,9 +152,10 @@ class SimpleDB {
         try {
           if (sql.includes('SELECT') && sql.includes('WHERE')) {
             if (sql.includes('vehicles') && sql.includes('vin') && sql.includes('userId')) {
-              return db.vehicles.find(v => v.vin === params[0] && v.userId === params[1]) || null;
+              return db.vehicles.find(v => v.vin === params[0] && v.userId === params[1] && v.userId !== undefined) || null;
             } else if (sql.includes('vehicles') && sql.includes('vin')) {
-              return db.vehicles.find(v => v.vin === params[0]) || null;
+              // Safeguard: if userId is provided in query but not in SQL, still check it
+              return db.vehicles.find(v => v.vin === params[0] && v.userId !== undefined) || null;
             } else if (sql.includes('invoices') && sql.includes('id')) {
               return db.invoices.find(i => i.id === params[0]) || null;
             } else if (sql.includes('customers') && sql.includes('id')) {
@@ -178,7 +179,7 @@ class SimpleDB {
               const searchTerm = params[1];
               const pattern = searchTerm.replace(/%/g, '').toLowerCase();
               return db.vehicles.filter(v =>
-                v.userId === userId && (
+                v.userId === userId && v.userId !== undefined && (
                   v.vin.toLowerCase().includes(pattern) ||
                   v.make.toLowerCase().includes(pattern) ||
                   (v.model && v.model.toLowerCase().includes(pattern))
@@ -188,11 +189,12 @@ class SimpleDB {
               const userId = params[0];
               const limit = params[1] || 100;
               const offset = params[2] || 0;
-              return db.vehicles.filter(v => v.userId === userId).reverse().slice(offset, offset + limit);
+              return db.vehicles.filter(v => v.userId === userId && v.userId !== undefined).reverse().slice(offset, offset + limit);
             } else {
+              // Safeguard: Never return vehicles without userId
               const limit = params[0] || 100;
               const offset = params[1] || 0;
-              return db.vehicles.reverse().slice(offset, offset + limit);
+              return db.vehicles.filter(v => v.userId !== undefined).reverse().slice(offset, offset + limit);
             }
           } else if (sql.includes('SELECT') && sql.includes('invoices')) {
             if (sql.includes('WHERE')) {
@@ -224,6 +226,17 @@ const db = new SimpleDB();
 
 export function initializeDatabase() {
   console.log('Initializing in-memory database (JSON-based)...');
+
+  // Migrate: Remove vehicles that don't have userId (data isolation fix)
+  // After this migration, vehicles MUST have userId to be visible
+  const vehiclesBeforeMigration = db.vehicles.length;
+  db.vehicles = db.vehicles.filter(v => v.userId && !isNaN(v.userId));
+  const vehiclesAfterMigration = db.vehicles.length;
+
+  if (vehiclesBeforeMigration > vehiclesAfterMigration) {
+    console.log(`🔐 Data Isolation Migration: Removed ${vehiclesBeforeMigration - vehiclesAfterMigration} orphaned vehicles without userId`);
+    db.save();
+  }
 
   // Initialize default services
   if (db.services.length === 0) {
