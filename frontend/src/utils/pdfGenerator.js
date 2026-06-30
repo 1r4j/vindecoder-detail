@@ -166,12 +166,14 @@ export function generatePDF({
       yPosition = margin;
     }
 
-    const qty = service.quantity;
-    const unitPrice = (service.defaultPrice || 0).toFixed(2);
-    const lineTotal = ((service.defaultPrice || 0) * qty).toFixed(2);
+    // Handle both database format (rate, serviceName) and form format (defaultPrice, name)
+    const qty = service.quantity || 1;
+    const serviceName = service.name || service.serviceName || 'Service';
+    const unitPrice = parseFloat(service.rate || service.defaultPrice || service.price || 0).toFixed(2);
+    const lineTotal = (parseFloat(unitPrice) * qty).toFixed(2);
 
     // Service name line
-    doc.text(service.name, col1X, yPosition);
+    doc.text(serviceName, col1X, yPosition);
     doc.text(qty.toString(), col2X, yPosition);
     doc.text(`${settings?.currency || '$'}${unitPrice}`, col3X, yPosition);
     doc.text(`${settings?.currency || '$'}${lineTotal}`, col4X, yPosition, { align: 'right' });
@@ -179,10 +181,11 @@ export function generatePDF({
     yPosition += 6;
 
     // Description on next line if exists (smaller, lighter)
-    if (service.description) {
+    const description = service.description || '';
+    if (description) {
       doc.setFontSize(8);
       doc.setTextColor(120, 120, 120);
-      doc.text(service.description, col1X + 3, yPosition);
+      doc.text(description, col1X + 3, yPosition);
       yPosition += 4;
       doc.setFontSize(9);
       doc.setTextColor(0, 0, 0);
