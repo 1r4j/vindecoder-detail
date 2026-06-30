@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { invoiceService, customerService, settingsService } from '../services/api';
-import { generatePDF } from '../utils/pdfGenerator';
+import { generatePDF, generateConsolidatedPDF } from '../utils/pdfGenerator';
 import ConsolidateInvoices from './ConsolidateInvoices';
 import { useAuth } from '../context/AuthContext';
 
@@ -72,29 +72,59 @@ export default function InvoiceHistory() {
     try {
       const customer = customers[invoice.customerId] || {};
 
-      // Get vehicle info from invoice
-      const vehicle = {
-        year: invoice.year || 'Not specified',
-        make: invoice.make || 'Not specified',
-        model: invoice.model || 'Not specified',
-        bodyType: invoice.bodyType || 'N/A',
-        vin: invoice.vin || 'Not specified',
-        color: invoice.color || 'Not specified'
-      };
+      // Check if this is a consolidated invoice (has consolidatedInvoiceIds or consolidatedFrom field)
+      const isConsolidated = invoice.consolidatedInvoiceIds || invoice.consolidatedFrom;
 
-      generatePDF({
-        vehicle,
-        customer,
-        services: invoice.items || [],
-        invoiceDate: invoice.invoiceDate,
-        serviceDate: invoice.serviceDate,
-        notes: invoice.notes,
-        subtotal: invoice.subtotal,
-        tax: invoice.tax,
-        total: invoice.total,
-        settings,
-        invoiceNumber: invoice.invoiceNumber
-      });
+      if (isConsolidated) {
+        // For consolidated invoices, fetch the original invoices
+        const consolidatedIds = invoice.consolidatedInvoiceIds || (invoice.consolidatedFrom && JSON.parse(invoice.consolidatedFrom)) || [];
+
+        if (consolidatedIds.length > 0) {
+          // Get all invoices and filter to the consolidated ones
+          const allInvoicesRes = await invoiceService.getList(500, 0);
+          const allInvoices = allInvoicesRes.data.data || [];
+          const originalInvoices = allInvoices.filter(inv => consolidatedIds.includes(inv.id));
+
+          generateConsolidatedPDF({
+            consolidatedInvoice: invoice,
+            originalInvoices: originalInvoices.length > 0 ? originalInvoices : [invoice],
+            customer,
+            settings
+          });
+        } else {
+          // Fallback if we can't find consolidated invoice IDs
+          generateConsolidatedPDF({
+            consolidatedInvoice: invoice,
+            originalInvoices: [invoice],
+            customer,
+            settings
+          });
+        }
+      } else {
+        // Regular invoice - use standard PDF generator
+        const vehicle = {
+          year: invoice.year || 'Not specified',
+          make: invoice.make || 'Not specified',
+          model: invoice.model || 'Not specified',
+          bodyType: invoice.bodyType || 'N/A',
+          vin: invoice.vin || 'Not specified',
+          color: invoice.color || 'Not specified'
+        };
+
+        generatePDF({
+          vehicle,
+          customer,
+          services: invoice.items || [],
+          invoiceDate: invoice.invoiceDate,
+          serviceDate: invoice.serviceDate,
+          notes: invoice.notes,
+          subtotal: invoice.subtotal,
+          tax: invoice.tax,
+          total: invoice.total,
+          settings,
+          invoiceNumber: invoice.invoiceNumber
+        });
+      }
     } catch (err) {
       console.error('PDF generation error:', err);
       setError('Failed to generate PDF');
