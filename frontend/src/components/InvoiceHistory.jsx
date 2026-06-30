@@ -365,7 +365,10 @@ export default function InvoiceHistory() {
             <div style={{ fontSize: '12px', color: 'var(--text-light)' }}>Total Revenue</div>
             <div style={{ fontSize: '24px', fontWeight: 'bold', color: 'var(--primary)' }}>
               {settings?.currency || '$'}
-              {invoices.reduce((sum, i) => sum + (i.total || 0), 0).toFixed(2)}
+              {invoices
+                .filter(i => i.status !== 'consolidated')
+                .reduce((sum, i) => sum + (i.total || 0), 0)
+                .toFixed(2)}
             </div>
           </div>
         </div>
