@@ -19,7 +19,12 @@ export default function Login({ onSuccess }) {
         initializeGoogleButton('google-signin-button', async (response) => {
           setOauthLoading(true);
           try {
-            const result = await handleGoogleSignIn(response.user.id_token);
+            // Google Sign-In returns credential (JWT token), not response.user.id_token
+            const token = response.credential;
+            if (!token) {
+              throw new Error('No credential received from Google');
+            }
+            const result = await handleGoogleSignIn(token);
             if (result.success) {
               if (onSuccess) onSuccess();
             }
