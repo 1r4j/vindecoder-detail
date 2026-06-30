@@ -303,7 +303,7 @@ export function generateConsolidatedPDF({
     yPosition += 4;
   };
 
-  // Header
+  // Header - Business Info
   addText(settings?.businessName || 'Your Detailing Business', { size: 16, bold: true });
   addText(
     (settings?.address || '') +
@@ -328,7 +328,7 @@ export function generateConsolidatedPDF({
   doc.setFontSize(24);
   doc.setFont(undefined, 'bold');
   doc.setTextColor(41, 128, 185);
-  doc.text('CONSOLIDATED INVOICE', pageWidth - margin, yPosition - 8, { align: 'right' });
+  doc.text('INVOICE', pageWidth - margin, yPosition - 8, { align: 'right' });
   doc.setTextColor(0, 0, 0);
 
   yPosition += 8;
@@ -338,7 +338,9 @@ export function generateConsolidatedPDF({
   doc.setFont(undefined, 'bold');
   addText('Invoice #: ' + (consolidatedInvoice.invoiceNumber || 'TBD'), { size: 10 });
   addText('Date: ' + new Date(consolidatedInvoice.invoiceDate).toLocaleDateString(), { size: 10 });
-  addText(`Consolidated from ${originalInvoices.length} invoice(s)`, { size: 10, color: [41, 128, 185] });
+
+  const dueDate = new Date(consolidatedInvoice.invoiceDate);
+  dueDate.setDate(dueDate.getDate() + (settings?.paymentTerms || 14));
 
   yPosition += 8;
   addText('BILL TO', { size: 11, bold: true });
@@ -351,26 +353,26 @@ export function generateConsolidatedPDF({
   addLine();
   yPosition += 4;
 
-  // Original Invoices with Vehicle Info
+  // Vehicle Information for all original invoices
+  addText('VEHICLES', { size: 11, bold: true });
+  yPosition += 2;
+
   originalInvoices.forEach((invoice, index) => {
-    // Page break check
-    if (yPosition > pageHeight - 80) {
+    if (yPosition > pageHeight - 60) {
       doc.addPage();
       yPosition = margin;
     }
 
-    // Invoice header
-    doc.setFontSize(12);
+    doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
     doc.setTextColor(41, 128, 185);
-    doc.text(`Original Invoice #${index + 1}: ${invoice.invoiceNumber || 'N/A'}`, margin, yPosition);
-    yPosition += 6;
+    doc.text(`Vehicle ${index + 1}:`, margin, yPosition);
+    yPosition += 5;
 
-    doc.setFontSize(10);
+    doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(0, 0, 0);
 
-    // Vehicle Info
     const vehicleInfo = [
       ['Year', invoice.year || 'Not specified'],
       ['Make', invoice.make || 'Not specified'],
@@ -380,102 +382,109 @@ export function generateConsolidatedPDF({
     ];
 
     vehicleInfo.forEach(([label, value]) => {
-      doc.setFontSize(9);
       doc.setFont(undefined, 'bold');
-      doc.text(label + ':', margin, yPosition);
+      doc.text(label + ':', margin + 5, yPosition);
       doc.setFont(undefined, 'normal');
       doc.text(String(value), margin + 30, yPosition);
       yPosition += 5;
     });
 
-    // Services for this invoice
-    yPosition += 3;
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'bold');
-    doc.text('Services:', margin, yPosition);
-    yPosition += 4;
+    yPosition += 2;
+  });
 
-    const col1X = margin;
-    const col2X = margin + 40;
-    const col3X = margin + 60;
-    const col4X = pageWidth - margin;
+  yPosition += 2;
+  addLine();
+  yPosition += 8;
 
-    doc.setFontSize(8);
-    doc.setFont(undefined, 'bold');
-    doc.text('Service', col1X, yPosition);
-    doc.text('Qty', col2X, yPosition);
-    doc.text('Unit Price', col3X, yPosition);
-    doc.text('Total', col4X, yPosition, { align: 'right' });
-    yPosition += 4;
+  // ===== SERVICE DETAILS SECTION =====
+  doc.setFontSize(13);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('SERVICE DETAILS', margin, yPosition);
+  yPosition += 8;
 
-    doc.setDrawColor(200, 200, 200);
-    doc.setLineWidth(0.3);
-    doc.line(margin, yPosition, pageWidth - margin, yPosition);
-    yPosition += 3;
+  // Define table structure
+  const tableLeft = margin;
+  const tableRight = pageWidth - margin;
+  const tableWidth = tableRight - tableLeft;
 
-    // Services
-    (invoice.items || []).forEach(item => {
-      doc.setFontSize(8);
-      doc.setFont(undefined, 'normal');
-      const serviceName = item.name || item.serviceName || 'Service';
-      const qty = item.quantity || 1;
-      const unitPrice = parseFloat(item.rate || item.defaultPrice || item.price || 0).toFixed(2);
+  const col1X = tableLeft;
+  const col2X = tableLeft + (tableWidth * 0.50);
+  const col3X = tableLeft + (tableWidth * 0.62);
+  const col4X = tableRight - 20;
+
+  // Header row
+  doc.setFontSize(10);
+  doc.setFont(undefined, 'bold');
+  doc.setTextColor(0, 0, 0);
+  doc.text('Service', col1X, yPosition);
+  doc.text('Qty', col2X, yPosition);
+  doc.text('Unit Price', col3X, yPosition);
+  doc.text('Total', col4X, yPosition, { align: 'right' });
+
+  yPosition += 1;
+  doc.setDrawColor(100, 100, 100);
+  doc.setLineWidth(0.5);
+  doc.line(tableLeft, yPosition, tableRight, yPosition);
+  yPosition += 7;
+
+  // Service rows - all services from all invoices
+  doc.setFontSize(9);
+  doc.setFont(undefined, 'normal');
+  doc.setTextColor(0, 0, 0);
+
+  originalInvoices.forEach((invoice) => {
+    (invoice.items || []).forEach((service) => {
+      // Page break check
+      if (yPosition > pageHeight - 60) {
+        doc.addPage();
+        yPosition = margin;
+      }
+
+      const qty = service.quantity || 1;
+      const serviceName = service.name || service.serviceName || 'Service';
+      const unitPrice = parseFloat(service.rate || service.defaultPrice || service.price || 0).toFixed(2);
       const lineTotal = (parseFloat(unitPrice) * qty).toFixed(2);
 
       doc.text(serviceName, col1X, yPosition);
       doc.text(qty.toString(), col2X, yPosition);
       doc.text(`${settings?.currency || '$'}${unitPrice}`, col3X, yPosition);
       doc.text(`${settings?.currency || '$'}${lineTotal}`, col4X, yPosition, { align: 'right' });
-      yPosition += 4;
+
+      yPosition += 6;
+
+      if (service.description) {
+        doc.setFontSize(8);
+        doc.setTextColor(120, 120, 120);
+        doc.text(service.description, col1X + 3, yPosition);
+        yPosition += 4;
+        doc.setFontSize(9);
+        doc.setTextColor(0, 0, 0);
+      }
+
+      doc.setDrawColor(200, 200, 200);
+      doc.setLineWidth(0.1);
+      doc.line(tableLeft, yPosition, tableRight, yPosition);
+      yPosition += 3;
     });
-
-    // Subtotal for this invoice
-    yPosition += 2;
-    doc.setFontSize(9);
-    doc.setFont(undefined, 'normal');
-    doc.setTextColor(80, 80, 80);
-    doc.text('Subtotal:', col3X, yPosition);
-    doc.setTextColor(0, 0, 0);
-    doc.text(`${settings?.currency || '$'}${parseFloat(invoice.subtotal || 0).toFixed(2)}`, col4X, yPosition, { align: 'right' });
-    yPosition += 4;
-
-    doc.setTextColor(80, 80, 80);
-    doc.text(`Tax:`, col3X, yPosition);
-    doc.setTextColor(0, 0, 0);
-    doc.text(`${settings?.currency || '$'}${parseFloat(invoice.tax || 0).toFixed(2)}`, col4X, yPosition, { align: 'right' });
-    yPosition += 5;
-
-    doc.setFont(undefined, 'bold');
-    doc.setTextColor(0, 0, 0);
-    doc.text('Total:', col3X, yPosition);
-    doc.text(`${settings?.currency || '$'}${parseFloat(invoice.total || 0).toFixed(2)}`, col4X, yPosition, { align: 'right' });
-    yPosition += 8;
-
-    addLine();
-    yPosition += 4;
   });
 
-  // Consolidated Summary
-  yPosition += 4;
-  doc.setFontSize(13);
-  doc.setFont(undefined, 'bold');
-  doc.setTextColor(41, 128, 185);
-  doc.text('CONSOLIDATED SUMMARY', margin, yPosition);
-  yPosition += 8;
+  yPosition += 3;
 
+  // ===== SUMMARY SECTION =====
   const summaryLabelX = pageWidth - margin - 70;
   const summaryValueX = pageWidth - margin - 2;
 
-  doc.setFontSize(10);
+  doc.setFontSize(9);
   doc.setFont(undefined, 'normal');
   doc.setTextColor(80, 80, 80);
-  doc.text('Total Subtotal:', summaryLabelX, yPosition);
+  doc.text('Subtotal:', summaryLabelX, yPosition);
   doc.setTextColor(0, 0, 0);
   doc.text(`${settings?.currency || '$'}${parseFloat(consolidatedInvoice.subtotal || 0).toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
   yPosition += 6;
 
   doc.setTextColor(80, 80, 80);
-  doc.text(`Total Tax (${settings?.taxRate || 8}%):`, summaryLabelX, yPosition);
+  doc.text(`Tax (${settings?.taxRate || 8}%):`, summaryLabelX, yPosition);
   doc.setTextColor(0, 0, 0);
   doc.text(`${settings?.currency || '$'}${parseFloat(consolidatedInvoice.tax || 0).toFixed(2)}`, summaryValueX, yPosition, { align: 'right' });
   yPosition += 8;
@@ -485,12 +494,12 @@ export function generateConsolidatedPDF({
   doc.line(summaryLabelX, yPosition - 1.5, summaryValueX, yPosition - 1.5);
 
   doc.setFont(undefined, 'bold');
-  doc.setFontSize(12);
-  doc.setTextColor(41, 128, 185);
-  doc.text('TOTAL DUE:', summaryLabelX, yPosition + 3);
+  doc.setFontSize(11);
+  doc.setTextColor(0, 0, 0);
+  doc.text('TOTAL:', summaryLabelX, yPosition + 3);
   doc.text(`${settings?.currency || '$'}${parseFloat(consolidatedInvoice.total || 0).toFixed(2)}`, summaryValueX, yPosition + 3, { align: 'right' });
 
   // Save
-  const fileName = `Consolidated-Invoice-${new Date().toISOString().split('T')[0]}.pdf`;
+  const fileName = `Invoice-${new Date().toISOString().split('T')[0]}.pdf`;
   doc.save(fileName);
 }
