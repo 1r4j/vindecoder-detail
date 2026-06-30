@@ -357,18 +357,20 @@ export function generateConsolidatedPDF({
   addText('VEHICLES', { size: 11, bold: true });
   yPosition += 2;
 
-  originalInvoices.forEach((invoice, index) => {
+  originalInvoices.forEach((invoice) => {
     if (yPosition > pageHeight - 60) {
       doc.addPage();
       yPosition = margin;
     }
 
+    // Invoice number
     doc.setFontSize(10);
     doc.setFont(undefined, 'bold');
-    doc.setTextColor(41, 128, 185);
-    doc.text(`Vehicle ${index + 1}:`, margin, yPosition);
-    yPosition += 5;
+    doc.setTextColor(0, 0, 0);
+    doc.text(`Invoice #${invoice.invoiceNumber || 'N/A'}`, margin, yPosition);
+    yPosition += 6;
 
+    // Vehicle info indented under invoice number
     doc.setFontSize(9);
     doc.setFont(undefined, 'normal');
     doc.setTextColor(0, 0, 0);
@@ -383,13 +385,13 @@ export function generateConsolidatedPDF({
 
     vehicleInfo.forEach(([label, value]) => {
       doc.setFont(undefined, 'bold');
-      doc.text(label + ':', margin + 5, yPosition);
+      doc.text(label + ':', margin + 10, yPosition);
       doc.setFont(undefined, 'normal');
-      doc.text(String(value), margin + 30, yPosition);
+      doc.text(String(value), margin + 35, yPosition);
       yPosition += 5;
     });
 
-    yPosition += 2;
+    yPosition += 3;
   });
 
   yPosition += 2;
