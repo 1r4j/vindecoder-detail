@@ -73,14 +73,35 @@ export default function InvoiceHistory() {
       const customer = customers[invoice.customerId] || {};
 
       // Check if this is a consolidated invoice (has consolidatedInvoiceIds or consolidatedFrom field)
-      const isConsolidated = invoice.consolidatedInvoiceIds || invoice.consolidatedFrom;
+      let consolidatedIds = [];
+      let isConsolidated = false;
 
-      if (isConsolidated) {
+      if (invoice.consolidatedInvoiceIds) {
+        isConsolidated = true;
+        consolidatedIds = Array.isArray(invoice.consolidatedInvoiceIds)
+          ? invoice.consolidatedInvoiceIds
+          : invoice.consolidatedInvoiceIds.split(',').map(id => parseInt(id));
+      } else if (invoice.consolidatedFrom) {
+        isConsolidated = true;
+        try {
+          // Try to parse as JSON
+          consolidatedIds = JSON.parse(invoice.consolidatedFrom);
+          if (!Array.isArray(consolidatedIds)) {
+            consolidatedIds = [];
+          }
+        } catch (e) {
+          // If JSON parse fails, try to split as comma-separated string
+          try {
+            consolidatedIds = invoice.consolidatedFrom.split(',').map(id => parseInt(id)).filter(id => !isNaN(id));
+          } catch (e2) {
+            consolidatedIds = [];
+          }
+        }
+      }
+
+      if (isConsolidated && consolidatedIds.length > 0) {
         // For consolidated invoices, fetch the original invoices
-        const consolidatedIds = invoice.consolidatedInvoiceIds || (invoice.consolidatedFrom && JSON.parse(invoice.consolidatedFrom)) || [];
-
-        if (consolidatedIds.length > 0) {
-          // Get all invoices and filter to the consolidated ones
+        try {
           const allInvoicesRes = await invoiceService.getList(500, 0);
           const allInvoices = allInvoicesRes.data.data || [];
           const originalInvoices = allInvoices.filter(inv => consolidatedIds.includes(inv.id));
@@ -91,8 +112,9 @@ export default function InvoiceHistory() {
             customer,
             settings
           });
-        } else {
-          // Fallback if we can't find consolidated invoice IDs
+        } catch (err) {
+          console.error('Error fetching original invoices:', err);
+          // Fallback to basic consolidated invoice
           generateConsolidatedPDF({
             consolidatedInvoice: invoice,
             originalInvoices: [invoice],
@@ -100,6 +122,14 @@ export default function InvoiceHistory() {
             settings
           });
         }
+      } else if (isConsolidated) {
+        // Consolidated but no original invoice IDs found - show as single invoice in consolidated format
+        generateConsolidatedPDF({
+          consolidatedInvoice: invoice,
+          originalInvoices: [invoice],
+          customer,
+          settings
+        });
       } else {
         // Regular invoice - use standard PDF generator
         const vehicle = {
