@@ -380,10 +380,19 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
 
       // Target regions for VIN text (where text is usually printed on curved barcode labels)
       const regions = [
-        { name: 'Full Image', x: 0, y: 0, w: 1.0, h: 1.0 },  // Try full image first
-        { name: 'Text Below Barcode', x: 0.1, y: 0.5, w: 0.8, h: 0.3 },  // Text below
-        { name: 'Text Center', x: 0.05, y: 0.3, w: 0.9, h: 0.4 },  // Center area
-        { name: 'Full Width VIN Zone', x: 0.0, y: 0.2, w: 1.0, h: 0.6 }  // Entire label
+        // Standard barcode labels (VIN centered)
+        { name: 'Center', x: 0.1, y: 0.35, w: 0.8, h: 0.15 },
+        { name: 'Upper-Center', x: 0.05, y: 0.25, w: 0.9, h: 0.25 },
+        { name: 'Lower-Center', x: 0.05, y: 0.45, w: 0.9, h: 0.25 },
+
+        // Door-jamb labels (Mercedes, BMW, Audi - VIN at bottom)
+        { name: 'VIN-Line-Bottom', x: 0.05, y: 0.60, w: 0.9, h: 0.12 },
+        { name: 'VIN-Exact', x: 0.05, y: 0.65, w: 0.9, h: 0.10 },
+        { name: 'VIN-With-Margin', x: 0.05, y: 0.58, w: 0.9, h: 0.15 },
+
+        // Fallback regions
+        { name: 'Full Width VIN Zone', x: 0.0, y: 0.2, w: 1.0, h: 0.6 },
+        { name: 'Full Image', x: 0, y: 0, w: 1.0, h: 1.0 }  // Try full image last
       ];
 
       // Multiple OCR configurations
@@ -426,18 +435,24 @@ export default function OptimizedVINScanner({ onVINDetected, onClose }) {
               tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
             });
 
-            if (result.data.text && result.data.confidence > 0.15) {
-              console.log(`      Raw text (conf ${result.data.confidence.toFixed(2)}): ${result.data.text.substring(0, 80)}`);
+            if (result.data.text) {
+              const confidence = result.data.confidence || 0;
+              console.log(`      Raw text (conf ${confidence.toFixed(2)}): "${result.data.text.substring(0, 80).trim()}"`);
 
-              // Aggressive VIN extraction
+              // Aggressive VIN extraction - even if confidence is low
               const vin = extractVINAggressively(result.data.text);
               if (vin) {
+                console.log(`      ✅ VIN Extracted: ${vin}`);
                 return {
                   vin,
-                  confidence: Math.min(0.92, Math.max(0.75, result.data.confidence)),
+                  confidence: Math.min(0.95, Math.max(0.70, confidence)),
                   source: `OCR ${config.name} (${region.name})`
                 };
+              } else {
+                console.log(`      ❌ Could not extract VIN from text`);
               }
+            } else {
+              console.log(`      ❌ No text returned by OCR`);
             }
           } catch (err) {
             // Continue to next config
