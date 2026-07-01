@@ -40,11 +40,15 @@ export function AuthProvider({ children }) {
   const register = async (email, password, name) => {
     setError('');
     try {
-      const response = await api.post('/auth/register', { email, password, name });
-      const { token, user } = response.data;
+      // Clear any old tokens first
+      localStorage.removeItem('token');
+      delete api.defaults.headers.common['Authorization'];
 
-      localStorage.setItem('token', token);
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      const response = await api.post('/auth/register', { email, password, name });
+      const { user } = response.data;
+
+      // Don't store token in localStorage - use httpOnly cookies only
+      // Just set Authorization header for this session if needed
       setUser(user);
 
       return { success: true, user };
@@ -58,11 +62,15 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setError('');
     try {
-      const response = await api.post('/auth/login', { email, password });
-      const { token, user } = response.data;
+      // Clear any old tokens first
+      localStorage.removeItem('token');
+      delete api.defaults.headers.common['Authorization'];
 
-      localStorage.setItem('token', token);
-      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+      const response = await api.post('/auth/login', { email, password });
+      const { user } = response.data;
+
+      // Don't store token in localStorage - use httpOnly cookies only
+      // Server sets cookie automatically in response
       setUser(user);
 
       return { success: true, user };
@@ -75,14 +83,22 @@ export function AuthProvider({ children }) {
 
   const logout = async () => {
     try {
-      await api.post('/auth/logout');
-    } catch (err) {
-      console.error('Logout error:', err);
-    } finally {
+      // Clear local state first
       localStorage.removeItem('token');
       delete api.defaults.headers.common['Authorization'];
       setUser(null);
       setError('');
+
+      // Try to notify server to clear httpOnly cookie
+      // (may fail if already logged out, which is OK)
+      try {
+        await api.post('/auth/logout');
+      } catch (err) {
+        console.log('Logout notification error (OK if already logged out):', err.message);
+      }
+    } catch (err) {
+      console.error('Logout error:', err);
+      setUser(null);
     }
   };
 
