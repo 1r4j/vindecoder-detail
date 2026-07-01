@@ -140,8 +140,13 @@ app.get('/', (req, res) => {
   });
 });
 
-// Auth routes (public) - with rate limiting
-app.use('/api/auth', authLimiter, authRoutes);
+// Auth routes (public) - rate limit only on login/register
+// Other endpoints like verify don't need rate limiting
+app.use('/api/auth', authRoutes);
+
+// Apply rate limiter only to login and register
+app.post('/api/auth/login', authLimiter);
+app.post('/api/auth/register', authLimiter);
 
 // OAuth routes (public) - with rate limiting
 app.use('/api/oauth', oauthLimiter, oauthRoutes);
