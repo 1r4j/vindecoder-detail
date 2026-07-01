@@ -22,28 +22,14 @@ export function findOrCreateOAuthUser(provider, profile) {
       };
     }
 
-    // Check if user exists with this email
+    // Check if email already exists - but DON'T auto-link
+    // Users must explicitly link accounts for security
     const email = profile.emails?.[0]?.value || profile.email;
-    user = db.users.find(u => u.email === email?.toLowerCase());
+    const emailExists = db.users.find(u => u.email === email?.toLowerCase());
 
-    if (user) {
-      // Link OAuth to existing account
-      user.oauthId = oauthId;
-      user.oauthProvider = provider;
-      db.save();
-
-      return {
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          createdAt: user.createdAt,
-          provider: provider
-        },
-        token: generateToken(user.id),
-        isNewUser: false,
-        linked: true
-      };
+    if (emailExists) {
+      // Email already registered - don't auto-link for security
+      throw new Error(`Email ${email} is already registered. Please sign in with the original authentication method, or use a different email for OAuth.`);
     }
 
     // Create new user from OAuth
