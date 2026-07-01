@@ -7,14 +7,6 @@ import { logAuditEvent, AUDIT_EVENTS } from '../utils/auditLog.js';
 
 const router = express.Router();
 
-// Token cookie options
-const cookieOptions = {
-  httpOnly: true, // Prevents JavaScript access (XSS protection)
-  secure: process.env.NODE_ENV === 'production', // HTTPS only in production
-  sameSite: 'strict', // CSRF protection
-  maxAge: 7 * 24 * 60 * 60 * 1000 // 7 days
-};
-
 // Register a new user
 router.post('/register', (req, res) => {
   try {
@@ -44,14 +36,13 @@ router.post('/register', (req, res) => {
     console.log('[AUTH_ROUTE] User created:', { id: user.id, email: user.email });
 
     const token = generateToken(user.id);
-    console.log('[AUTH_ROUTE] Token generated, setting httpOnly cookie');
+    console.log('[AUTH_ROUTE] Token generated, sending in response');
 
     logAuditEvent(AUDIT_EVENTS.REGISTER_SUCCESS, user.id, { email: user.email });
 
-    res.cookie('authToken', token, cookieOptions);
-
     res.status(201).json({
       success: true,
+      token,
       user
     });
   } catch (error) {
@@ -106,10 +97,9 @@ router.post('/login', (req, res) => {
 
     logAuditEvent(AUDIT_EVENTS.LOGIN_SUCCESS, user.id, { email: user.email });
 
-    res.cookie('authToken', token, cookieOptions);
-
     res.json({
       success: true,
+      token,
       user: {
         id: user.id,
         email: user.email,
@@ -162,15 +152,9 @@ router.post('/verify', authMiddleware, (req, res) => {
   }
 });
 
-// Logout (clear httpOnly cookie)
+// Logout (client handles token cleanup)
 router.post('/logout', authMiddleware, (req, res) => {
   logAuditEvent(AUDIT_EVENTS.LOGOUT, req.userId);
-
-  res.clearCookie('authToken', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'strict'
-  });
 
   res.json({
     success: true,

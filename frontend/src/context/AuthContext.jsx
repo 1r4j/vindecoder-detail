@@ -40,15 +40,13 @@ export function AuthProvider({ children }) {
   const register = async (email, password, name) => {
     setError('');
     try {
-      // Clear any old tokens first
-      localStorage.removeItem('token');
-      delete api.defaults.headers.common['Authorization'];
-
       const response = await api.post('/auth/register', { email, password, name });
-      const { user } = response.data;
+      const { token, user } = response.data;
 
-      // Don't store token in localStorage - use httpOnly cookies only
-      // Just set Authorization header for this session if needed
+      // Store token in Authorization header (in-memory, cleared on refresh)
+      // More secure than localStorage, works better with CORS
+      localStorage.setItem('token', token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(user);
 
       return { success: true, user };
@@ -62,15 +60,12 @@ export function AuthProvider({ children }) {
   const login = async (email, password) => {
     setError('');
     try {
-      // Clear any old tokens first
-      localStorage.removeItem('token');
-      delete api.defaults.headers.common['Authorization'];
-
       const response = await api.post('/auth/login', { email, password });
-      const { user } = response.data;
+      const { token, user } = response.data;
 
-      // Don't store token in localStorage - use httpOnly cookies only
-      // Server sets cookie automatically in response
+      // Store token in Authorization header (in-memory, cleared on refresh)
+      localStorage.setItem('token', token);
+      api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
       setUser(user);
 
       return { success: true, user };

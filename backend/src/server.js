@@ -4,7 +4,6 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import helmet from 'helmet';
 import rateLimit from 'express-rate-limit';
-import cookieParser from 'cookie-parser';
 import { initializeDatabase } from './db.js';
 
 import authRoutes from './routes/auth.js';
@@ -113,7 +112,6 @@ app.options('*', cors(corsOptions));
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser());
 
 // Initialize database with error handling
 try {

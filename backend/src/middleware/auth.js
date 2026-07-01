@@ -20,16 +20,11 @@ export function verifyToken(token) {
 }
 
 export function authMiddleware(req, res, next) {
-  // Try to get token from Authorization header first (for API calls)
+  // Get token from Authorization header (primary method)
   let token = null;
   const authHeader = req.headers.authorization;
   if (authHeader && authHeader.startsWith('Bearer ')) {
     token = authHeader.split(' ')[1];
-  }
-
-  // Fall back to cookie (for browser requests)
-  if (!token && req.cookies && req.cookies.authToken) {
-    token = req.cookies.authToken;
   }
 
   if (!token) {
